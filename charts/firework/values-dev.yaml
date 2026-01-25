@@ -7,11 +7,11 @@ replicaCount: 1
 
 # This sets the container image more information can be found here: https://kubernetes.io/docs/concepts/containers/images/
 image:
-  repository: nginx
+  repository: tiktuzki/firework-demo
   # This sets the pull policy for images.
   pullPolicy: IfNotPresent
   # Overrides the image tag whose default is the chart appVersion.
-  tag: ""
+  tag: "latest"
 
 # This is for the secrets for pulling an image from a private repository more information can be found here: https://kubernetes.io/docs/tasks/configure-pod-container/pull-image-private-registry/
 imagePullSecrets: [ ]
@@ -46,13 +46,13 @@ securityContext: { }
   #   drop:
   #   - ALL
   # readOnlyRootFilesystem: true
-  # runAsNonRoot: true
+# runAsNonRoot: true
 # runAsUser: 1000
 
 # This is for setting up a service more information can be found here: https://kubernetes.io/docs/concepts/services-networking/service/
 service:
   # This sets the service type more information can be found here: https://kubernetes.io/docs/concepts/services-networking/service/#publishing-services-service-types
-  type: ClusterIP
+  type: NodePort
   # This sets the ports more information can be found here: https://kubernetes.io/docs/concepts/services-networking/service/#field-spec-ports
   port: 80
 
@@ -61,7 +61,7 @@ ingress:
   enabled: false
   className: ""
   annotations: { }
-    # kubernetes.io/ingress.class: nginx
+  # kubernetes.io/ingress.class: nginx
   # kubernetes.io/tls-acme: "true"
   hosts:
     - host: chart-example.local
@@ -70,7 +70,7 @@ ingress:
           pathType: ImplementationSpecific
   tls: [ ]
     # - secretName: chart-example-tls
-    #   hosts:
+  #   hosts:
   #     - chart-example.local
 
 # -- Expose the service via gateway-api HTTPRoute
@@ -120,7 +120,7 @@ resources: { }
   #   cpu: 100m
   #   memory: 128Mi
   # requests:
-  #   cpu: 100m
+#   cpu: 100m
 #   memory: 128Mi
 
 # This is to setup the liveness and readiness probes more information can be found here: https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/
@@ -145,13 +145,13 @@ autoscaling:
 volumes: [ ]
   # - name: foo
   #   secret:
-  #     secretName: mysecret
+#     secretName: mysecret
 #     optional: false
 
 # Additional volumeMounts on the output Deployment definition.
 volumeMounts: [ ]
   # - name: foo
-  #   mountPath: "/etc/foo"
+#   mountPath: "/etc/foo"
 #   readOnly: true
 
 nodeSelector: { }
