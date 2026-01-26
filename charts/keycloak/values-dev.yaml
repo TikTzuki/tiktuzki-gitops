@@ -197,11 +197,11 @@ database:
   ## @param database.password Database password (only used when not using embedded database)
   password: ""
   ## @param database.existingSecret Name of existing secret for database credentials (only used when not using embedded database)
-  existingSecret: ""
+  existingSecret: "database-secret.database"
   ## @param database.secretKeys Secret keys for database credentials (only used when not using embedded database)
   secretKeys:
-    passwordKey: "db-password"
-    usernameKey: "db-username"
+    passwordKey: "postgres-password"
+    usernameKey: "postgres-username"
   ## @param database.jdbcParams Additional JDBC parameters
   jdbcParams: ""
 
@@ -437,7 +437,7 @@ initContainers:
 ## @descriptionEnd
 postgres:
   ## @param postgres.enabled Enable embedded PostgreSQL database
-  enabled: true
+  enabled: false
   ## @param postgres.auth.database PostgreSQL database name
   ## @param postgres.auth.username PostgreSQL database user (leave empty for default 'postgres')
   ## @param postgres.auth.password PostgreSQL database password
