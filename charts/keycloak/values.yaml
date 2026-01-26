@@ -252,7 +252,7 @@ ingress:
   ## @param ingress.annotations Additional annotations for the Ingress resource
   annotations: { }
     # kubernetes.io/ingress.class: nginx
-  # kubernetes.io/tls-acme: "true"
+    # kubernetes.io/tls-acme: "true"
   # nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
   ## @param ingress.hosts[0].host Hostname for Keycloak ingress
   ## @param ingress.hosts[0].paths[0].path Path for Keycloak ingress
@@ -278,7 +278,7 @@ resources: { }
   #   cpu: 500m
   #   memory: 512Mi
   # requests:
-#   cpu: 250m
+  #   cpu: 250m
 #   memory: 256Mi
 
 ## @section Persistence
@@ -413,7 +413,7 @@ extraEnvVars: [ ]
   # - name: SECRET_VAR
   #   valueFrom:
   #     secretKeyRef:
-#       name: my-secret
+  #       name: my-secret
 #       key: secret-key
 
 ## @param extraEnvVarsSecret Name of a secret containing additional environment variables

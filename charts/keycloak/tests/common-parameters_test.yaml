@@ -1,0 +1,196 @@
+suite: test common parameters
+templates:
+  - templates/statefulset.yaml
+  - templates/service.yaml
+  - templates/ingress.yaml
+  - templates/secret.yaml
+  - templates/serviceaccount.yaml
+set:
+  image:
+    tag: 26.4.5@sha256:653852bfdea2be6e958b9e90a976eff1c6de34edd55f2f679bdc48ef16bc528e
+
+tests:
+  - it: should render default values correctly
+    asserts:
+      - isKind:
+          of: StatefulSet
+        template: templates/statefulset.yaml
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-keycloak
+        template: templates/statefulset.yaml
+      - equal:
+          path: spec.replicas
+          value: 1
+        template: templates/statefulset.yaml
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: docker.io/keycloak/keycloak:26.4.5@sha256:653852bfdea2be6e958b9e90a976eff1c6de34edd55f2f679bdc48ef16bc528e
+        template: templates/statefulset.yaml
+
+  - it: should render custom name and fullname overrides
+    set:
+      nameOverride: custom-name
+      fullnameOverride: custom-fullname
+    asserts:
+      - equal:
+          path: metadata.name
+          value: custom-fullname
+        template: templates/statefulset.yaml
+      - equal:
+          path: metadata.name
+          value: custom-fullname
+        template: templates/service.yaml
+
+  - it: should render custom labels and annotations
+    set:
+      commonLabels:
+        custom-label: custom-value
+      commonAnnotations:
+        custom-annotation: custom-value
+    asserts:
+      - equal:
+          path: metadata.labels['custom-label']
+          value: custom-value
+        template: templates/statefulset.yaml
+      - equal:
+          path: metadata.annotations['custom-annotation']
+          value: custom-value
+        template: templates/statefulset.yaml
+
+  - it: should render custom image registry
+    set:
+      global:
+        imageRegistry: custom-registry.io
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: custom-registry.io/keycloak/keycloak:26.4.5@sha256:653852bfdea2be6e958b9e90a976eff1c6de34edd55f2f679bdc48ef16bc528e
+        template: templates/statefulset.yaml
+
+  - it: should render custom replica count
+    set:
+      replicaCount: 3
+    asserts:
+      - equal:
+          path: spec.replicas
+          value: 3
+        template: templates/statefulset.yaml
+
+  - it: should render service configuration
+    asserts:
+      - isKind:
+          of: Service
+        template: templates/service.yaml
+      - equal:
+          path: spec.type
+          value: ClusterIP
+        template: templates/service.yaml
+      - equal:
+          path: spec.ports[0].port
+          value: 8080
+        template: templates/service.yaml
+      - equal:
+          path: spec.ports[0].targetPort
+          value: 8080
+        template: templates/service.yaml
+
+  - it: should render volumeClaimTemplates when persistence is enabled
+    set:
+      persistence:
+        enabled: true
+        size: 10Gi
+    asserts:
+      - isNotEmpty:
+          path: spec.volumeClaimTemplates
+        template: templates/statefulset.yaml
+      - equal:
+          path: spec.volumeClaimTemplates[0].spec.resources.requests.storage
+          value: 10Gi
+        template: templates/statefulset.yaml
+
+  - it: should not render volumeClaimTemplates when persistence is disabled
+    set:
+      persistence:
+        enabled: false
+    asserts:
+      - isNull:
+          path: spec.volumeClaimTemplates
+        template: templates/statefulset.yaml
+
+  - it: should render ingress when enabled
+    set:
+      ingress:
+        enabled: true
+        hosts:
+          - host: keycloak.example.com
+            paths:
+              - path: /
+                pathType: Prefix
+    asserts:
+      - isKind:
+          of: Ingress
+        template: templates/ingress.yaml
+      - equal:
+          path: spec.rules[0].host
+          value: keycloak.example.com
+        template: templates/ingress.yaml
+
+  - it: should not render ingress when disabled
+    set:
+      ingress:
+        enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+        template: templates/ingress.yaml
+
+  - it: should render admin secret
+    set:
+      keycloak:
+        adminPassword: test-password
+      postgres:
+        enabled: false
+      database:
+        type: postgres
+    asserts:
+      - isKind:
+          of: Secret
+        template: templates/secret.yaml
+        documentIndex: 0
+      - equal:
+          path: data['admin-password']
+          value: dGVzdC1wYXNzd29yZA==
+        template: templates/secret.yaml
+        documentIndex: 0
+
+  - it: should render database secret for external database
+    set:
+      database:
+        type: postgres
+        username: keycloak
+        password: db-password
+    asserts:
+      - hasDocuments:
+          count: 2
+        template: templates/secret.yaml
+
+  - it: should configure Keycloak environment for development mode
+    set:
+      keycloak:
+        production: false
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: "start-dev"
+        template: templates/statefulset.yaml
+
+  - it: should configure Keycloak environment for production mode
+    set:
+      keycloak:
+        production: true
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: "start"
+        template: templates/statefulset.yaml

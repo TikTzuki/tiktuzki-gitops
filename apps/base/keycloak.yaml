@@ -1,17 +1,17 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: postgres
+  name: keycloak
   namespace: devops
 spec:
   destination:
-    name: keycloak
+    name: ''
     namespace: infrastructure
     server: https://kubernetes.default.svc
   source:
-    repoURL: oci://registry-1.docker.io/cloudpirates
-    chart: keycloak
-    targetRevision: 0.32.2
+    repoURL: git@github.com:TikTzuki/tiktuzki-gitops.git
+    targetRevision: main
+    path: charts/keycloak
     helm:
       valueFiles:
         - values-dev.yaml
