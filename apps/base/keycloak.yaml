@@ -5,13 +5,13 @@ metadata:
   namespace: devops
 spec:
   destination:
-    name: ''
-    namespace: database
+    name: keycloak
+    namespace: infrastructure
     server: https://kubernetes.default.svc
   source:
-    repoURL: git@github.com:TikTzuki/tiktuzki-gitops.git
-    targetRevision: main
-    path: charts/postgres
+    repoURL: oci://registry-1.docker.io/cloudpirates
+    chart: keycloak
+    targetRevision: 0.32.2
     helm:
       valueFiles:
         - values-dev.yaml

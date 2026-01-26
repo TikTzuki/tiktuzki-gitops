@@ -18,7 +18,7 @@ persistence:
             - key: kubernetes.io/hostname
               operator: In
               values:
-                - tik  # Change to your actual node name
+                - node1 # Change to your actual node name
 
 # Service configuration
 service:
