@@ -1,163 +1,385 @@
-<!--- app-name: %%CHART_NAME%% -->
+# Room Manager Helm Chart
 
-# %%CHART_NAME%%
+This Helm chart deploys the Room Manager Spring Boot application on Kubernetes with support for local node volumes for logs storage.
 
-%%DESCRIPTION%% (check existing examples)
+## Features
 
-## TL;DR
-
-```console
-helm install my-release oci://registry-1.docker.io/bitnamicharts/%%CHART_NAME%%
-```
-
-Looking to use %%CHART_NAME%% in production? Try [VMware Tanzu Application Catalog](https://bitnami.com/enterprise), the enterprise edition of Bitnami Application Catalog.
-
-## Introduction
-
-%%INTRODUCTION%% (check existing examples)
+- Spring Boot application (tiktuzki/room-manager)
+- NodePort service for external access on port 30080
+- Local persistent volume for `/app/logs` directory
+- Spring Boot Actuator health checks
+- ArgoCD application ready
+- Configurable resources and JVM options
 
 ## Prerequisites
 
-- Kubernetes 1.23+
-- Helm 3.8.0+
-- PV provisioner support in the underlying infrastructure
-- ReadWriteMany volumes for deployment scaling
+1. Kubernetes cluster (tested with MicroK8s)
+2. Local storage path created on the node for logs
+3. ArgoCD installed (for ArgoCD deployment)
 
-## Installing the Chart
+## Local Volume Setup
 
-To install the chart with the release name `my-release`:
+Before deploying, ensure the local storage path exists on your node:
 
-```console
-helm install my-release oci://REGISTRY_NAME/REPOSITORY_NAME/%%CHART_NAME%%
+```bash
+# SSH into your node or run on the node
+ssh user@node-hostname
+
+# Create the directory for logs
+sudo mkdir -p /mnt/data/room-manager/logs
+sudo chmod 755 /mnt/data/room-manager/logs
+# Allow the application user to write logs (adjust UID if needed)
+sudo chown -R 1000:1000 /mnt/data/room-manager/logs
 ```
 
-> Note: You need to substitute the placeholders `REGISTRY_NAME` and `REPOSITORY_NAME` with a reference to your Helm chart registry and repository. For example, in the case of Bitnami, you need to use `REGISTRY_NAME=registry-1.docker.io` and `REPOSITORY_NAME=bitnamicharts`.
+## Installation
 
-The command deploys %%CHART_NAME%% on the Kubernetes cluster in the default configuration. The [Parameters](#parameters) section lists the parameters that can be configured during installation.
+### Method 1: Direct Helm Install
 
-> **Tip**: List all releases using `helm list`
-
-## Uninstalling the Chart
-
-To uninstall/delete the `my-release` deployment:
-
-```console
-helm delete my-release
-```
-
-The command removes all the Kubernetes components associated with the chart and deletes the release.
-
-## Parameters
-
-See <https://github.com/bitnami/readme-generator-for-helm> to create the table
-
-The above parameters map to the env variables defined in [bitnami/%%CHART_NAME%%](https://github.com/bitnami/containers/tree/main/bitnami/%%CHART_NAME%%). For more information please refer to the [bitnami/%%CHART_NAME%%](https://github.com/bitnami/containers/tree/main/bitnami/%%CHART_NAME%%) image documentation.
-
-Specify each parameter using the `--set key=value[,key=value]` argument to `helm install`. For example,
-
-```console
-helm install my-release \
-  --set %%CHART_NAME%%Username=admin \
-  --set %%CHART_NAME%%Password=password \
-  --set mariadb.auth.rootPassword=secretpassword \
-    oci://REGISTRY_NAME/REPOSITORY_NAME/%%CHART_NAME%%
-```
-
-> Note: You need to substitute the placeholders `REGISTRY_NAME` and `REPOSITORY_NAME` with a reference to your Helm chart registry and repository. For example, in the case of Bitnami, you need to use `REGISTRY_NAME=registry-1.docker.io` and `REPOSITORY_NAME=bitnamicharts`.
-
-The above command sets the %%CHART_NAME%% administrator account username and password to `admin` and `password` respectively. Additionally, it sets the MariaDB `root` user password to `secretpassword`.
-
-> NOTE: Once this chart is deployed, it is not possible to change the application's access credentials, such as usernames or passwords, using Helm. To change these application credentials after deployment, delete any persistent volumes (PVs) used by the chart and re-deploy it, or use the application's built-in administrative tools if available.
-
-Alternatively, a YAML file that specifies the values for the above parameters can be provided while installing the chart. For example,
-
-```console
-helm install my-release -f values.yaml oci://REGISTRY_NAME/REPOSITORY_NAME/%%CHART_NAME%%
-```
-
-> Note: You need to substitute the placeholders `REGISTRY_NAME` and `REPOSITORY_NAME` with a reference to your Helm chart registry and repository. For example, in the case of Bitnami, you need to use `REGISTRY_NAME=registry-1.docker.io` and `REPOSITORY_NAME=bitnamicharts`.
-> **Tip**: You can use the default [values.yaml](https://github.com/bitnami/charts/blob/main/template/CHART_NAME/values.yaml)
-
-## Configuration and installation details
-
-### [Rolling VS Immutable tags](https://docs.bitnami.com/containers/how-to/understand-rolling-tags-containers/)
-
-It is strongly recommended to use immutable tags in a production environment. This ensures your deployment does not change automatically if the same tag is updated with a different image.
-
-Bitnami will release a new chart updating its containers if a new version of the main container, significant changes, or critical vulnerabilities exist.
-
-### External database support
-
-%%IF NEEDED%%
-
-You may want to have %%CHART_NAME%% connect to an external database rather than installing one inside your cluster. Typical reasons for this are to use a managed database service, or to share a common database server for all your applications. To achieve this, the chart allows you to specify credentials for an external database with the [`externalDatabase` parameter](#parameters). You should also disable the MariaDB installation with the `mariadb.enabled` option. Here is an example:
-
-```console
-mariadb.enabled=false
-externalDatabase.host=myexternalhost
-externalDatabase.user=myuser
-externalDatabase.password=mypassword
-externalDatabase.database=mydatabase
-externalDatabase.port=3306
-```
-
-### Ingress
-
-%%IF NEEDED%%
-
-This chart provides support for Ingress resources. If you have an ingress controller installed on your cluster, such as [nginx-ingress-controller](https://github.com/bitnami/charts/tree/main/bitnami/nginx-ingress-controller) or [contour](https://github.com/bitnami/charts/tree/main/bitnami/contour) you can utilize the ingress controller to serve your application.
-
-To enable Ingress integration, set `ingress.enabled` to `true`. The `ingress.hostname` property can be used to set the host name. The `ingress.tls` parameter can be used to add the TLS configuration for this host. It is also possible to have more than one host, with a separate TLS configuration for each host. [Learn more about configuring and using Ingress](https://docs.bitnami.com/kubernetes/apps/%%CHART_NAME%%/configuration/configure-use-ingress/).
-
-### TLS secrets
-
-The chart also facilitates the creation of TLS secrets for use with the Ingress controller, with different options for certificate management. [Learn more about TLS secrets](https://docs.bitnami.com/kubernetes/apps/%%CHART_NAME%%/administration/enable-tls/).
-
-### %%OTHER_SECTIONS%%
-
-## Persistence
-
-The [Bitnami %%CHART_NAME%%](https://github.com/bitnami/containers/tree/main/bitnami/%%CHART_NAME%%) image stores the %%CHART_NAME%% data and configurations at the `/bitnami` path of the container. Persistent Volume Claims are used to keep the data across deployments. [Learn more about persistence in the chart documentation](https://docs.bitnami.com/kubernetes/apps/%%CHART_NAME%%/configuration/chart-persistence/).
-
-### Additional environment variables
-
-In case you want to add extra environment variables (useful for advanced operations like custom init scripts), you can use the `extraEnvVars` property.
+1. Update `values.yaml` with your node name:
 
 ```yaml
-%%CHART_NAME%%:
-  extraEnvVars:
-    - name: LOG_LEVEL
-      value: error
+persistence:
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - your-node-name  # Change this!
 ```
 
-Alternatively, you can use a ConfigMap or a Secret with the environment variables. To do so, use the `extraEnvVarsCM` or the `extraEnvVarsSecret` values.
+2. Install the chart:
 
-### Sidecars
+```bash
+helm install room-manager . -n default --create-namespace
+```
 
-If additional containers are needed in the same pod as %%CHART_NAME%% (such as additional metrics or logging exporters), they can be defined using the `sidecars` parameter. If these sidecars export extra ports, extra port definitions can be added using the `service.extraPorts` parameter. [Learn more about configuring and using sidecar containers](https://docs.bitnami.com/kubernetes/apps/%%CHART_NAME%%/administration/configure-use-sidecars/).
+### Method 2: ArgoCD Deployment
 
-### Pod affinity
+1. Update `room-manager-application.yaml`:
+  - Set your Git repository URL
+  - Update the node name in `nodeAffinity`
+  - Set the image tag to your desired version
 
-This chart allows you to set your custom affinity using the `affinity` parameter. Find more information about Pod affinity in the [kubernetes documentation](https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#affinity-and-anti-affinity).
+2. Apply the ArgoCD application:
 
-As an alternative, use one of the preset configurations for pod affinity, pod anti-affinity, and node affinity available at the [bitnami/common](https://github.com/bitnami/charts/tree/main/bitnami/common#affinities) chart. To do so, set the `podAffinityPreset`, `podAntiAffinityPreset`, or `nodeAffinityPreset` parameters.
+```bash
+kubectl apply -f room-manager-application.yaml
+```
+
+## Configuration
+
+### Key Values
+
+| Parameter                    | Description                 | Default                       |
+|------------------------------|-----------------------------|-------------------------------|
+| `image.repository`           | Docker image repository     | `tiktuzki/room-manager`       |
+| `image.tag`                  | Image tag                   | `""` (uses Chart.AppVersion)  |
+| `springBoot.javaOpts`        | JVM options                 | `"-Xms512m -Xmx1024m"`        |
+| `springBoot.profiles`        | Spring profiles             | `"prod"`                      |
+| `service.type`               | Service type                | `NodePort`                    |
+| `service.port`               | Service port                | `8080`                        |
+| `service.nodePort`           | NodePort number             | `30080`                       |
+| `persistence.enabled`        | Enable persistence for logs | `true`                        |
+| `persistence.size`           | Storage size for logs       | `5Gi`                         |
+| `persistence.useLocalVolume` | Use local node volume       | `true`                        |
+| `persistence.localPath`      | Path on node                | `/mnt/data/room-manager/logs` |
+
+### Spring Boot Configuration
+
+The chart supports configuring Spring Boot via environment variables:
+
+```yaml
+springBoot:
+  javaOpts: "-Xms512m -Xmx1024m -XX:+UseG1GC"
+  profiles: "prod,mysql"
+```
+
+This sets:
+
+- `JAVA_OPTS` environment variable
+- `SPRING_PROFILES_ACTIVE` environment variable
+
+### Health Checks
+
+The chart uses Spring Boot Actuator endpoints:
+
+- Liveness: `/actuator/health/liveness`
+- Readiness: `/actuator/health/readiness`
+
+Ensure your Spring Boot application has these endpoints enabled:
+
+```yaml
+management:
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  health:
+    livenessState:
+      enabled: true
+    readinessState:
+      enabled: true
+```
+
+## Accessing Room Manager
+
+### From outside the cluster (NodePort):
+
+```bash
+# Get node IP
+kubectl get nodes -o wide
+
+# Access the application
+curl http://<node-ip>:30080
+
+# Check health
+curl http://<node-ip>:30080/actuator/health
+```
+
+### From within the cluster:
+
+```bash
+# Port-forward for local testing
+kubectl port-forward svc/room-manager 8080:8080
+
+# Access locally
+curl http://localhost:8080
+```
+
+## Getting Node Name
+
+To find your node name:
+
+```bash
+kubectl get nodes
+```
+
+Or with labels:
+
+```bash
+kubectl get nodes --show-labels
+```
+
+## Verify Deployment
+
+```bash
+# Check if PV is created and bound
+kubectl get pv
+
+# Check if PVC is bound
+kubectl get pvc
+
+# Check pod status
+kubectl get pods
+
+# Check service
+kubectl get svc room-manager
+
+# Check logs
+kubectl logs -l app.kubernetes.io/name=room-manager
+
+# Check application logs from mounted volume
+kubectl exec -it deployment/room-manager -- ls -la /app/logs
+```
 
 ## Troubleshooting
 
-Find more information about how to deal with common errors related to Bitnami's Helm charts in [this troubleshooting guide](https://docs.bitnami.com/general/how-to/troubleshoot-helm-chart-issues).
+### PVC not binding to PV
 
-## License
+1. Check node affinity matches your actual node:
 
-Copyright &copy; 2023 VMware, Inc.
+```bash
+kubectl get nodes --show-labels
+kubectl describe pv
+kubectl describe pvc
+```
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
+2. Verify the local path exists and has correct permissions:
 
-<http://www.apache.org/licenses/LICENSE-2.0>
+```bash
+ls -la /mnt/data/room-manager/logs
+```
 
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+### Pod not starting
+
+Check logs:
+
+```bash
+kubectl logs -l app.kubernetes.io/name=room-manager
+```
+
+Check events:
+
+```bash
+kubectl describe pod -l app.kubernetes.io/name=room-manager
+```
+
+Common issues:
+
+- Image pull errors - check image name and tag
+- Health check failures - verify actuator endpoints are enabled
+- Permission issues - check log directory permissions
+
+### Application logs
+
+View application logs from the persistent volume:
+
+```bash
+# Enter pod
+kubectl exec -it deployment/room-manager -- bash
+
+# Check logs directory
+ls -la /app/logs
+tail -f /app/logs/application.log
+```
+
+### Cannot access via NodePort
+
+1. Verify service is running:
+
+```bash
+kubectl get svc room-manager
+```
+
+2. Check firewall allows port 30080
+
+3. Verify pod is running and ready:
+
+```bash
+kubectl get pods -l app.kubernetes.io/name=room-manager
+```
+
+## Uninstall
+
+### Helm:
+
+```bash
+helm uninstall room-manager
+```
+
+### ArgoCD:
+
+```bash
+kubectl delete -f room-manager-application.yaml
+```
+
+**Note:** The PV has `Retain` reclaim policy, so logs will persist even after uninstall. Manually delete the PV if needed.
+
+## Upgrading
+
+### Update image version:
+
+```bash
+helm upgrade room-manager . --set image.tag=v1.2.3
+```
+
+### Update via ArgoCD:
+
+Edit the application YAML or use ArgoCD UI to change the image tag, then sync.
+
+## Advanced Configuration
+
+### Custom application.properties
+
+You can mount custom configuration using ConfigMap:
+
+1. Create ConfigMap:
+
+```bash
+kubectl create configmap room-manager-config --from-file=application.properties
+```
+
+2. Mount in values.yaml:
+
+```yaml
+volumeMounts:
+  - name: config
+    mountPath: /app/config
+    
+volumes:
+  - name: config
+    configMap:
+      name: room-manager-config
+```
+
+### Database Configuration
+
+Add database environment variables:
+
+```yaml
+env:
+  - name: SPRING_DATASOURCE_URL
+    value: "jdbc:mysql://mysql:3306/roomdb"
+  - name: SPRING_DATASOURCE_USERNAME
+    valueFrom:
+      secretKeyRef:
+        name: db-secret
+        key: username
+  - name: SPRING_DATASOURCE_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: db-secret
+        key: password
+```
+
+### Resource Limits
+
+Configure resource requests and limits:
+
+```yaml
+resources:
+  limits:
+    cpu: 2000m
+    memory: 2Gi
+  requests:
+    cpu: 500m
+    memory: 512Mi
+```
+
+## Monitoring
+
+### Check metrics endpoint:
+
+```bash
+curl http://<node-ip>:30080/actuator/metrics
+```
+
+### View application info:
+
+```bash
+curl http://<node-ip>:30080/actuator/info
+```
+
+## Security Recommendations
+
+1. Use specific image tags instead of `latest`
+2. Set resource limits to prevent resource exhaustion
+3. Use secrets for sensitive configuration
+4. Consider using ingress with TLS instead of NodePort for production
+5. Enable RBAC and use appropriate service accounts
+6. Regularly update dependencies and base images
+7. Use network policies to restrict pod communication
+
+## Backup Logs
+
+Since logs are persisted on local volume:
+
+```bash
+# From the node
+tar -czf room-manager-logs-backup-$(date +%Y%m%d).tar.gz /mnt/data/room-manager/logs
+
+# Or from pod
+kubectl exec deployment/room-manager -- tar -czf /tmp/logs-backup.tar.gz /app/logs
+kubectl cp <pod-name>:/tmp/logs-backup.tar.gz ./logs-backup.tar.gz
+```
+
+## Support
+
+For application-specific issues, check:
+
+- Application logs: `kubectl logs -l app.kubernetes.io/name=room-manager`
+- Persistent logs: `/mnt/data/room-manager/logs` on the node
+- Health status: `http://<node-ip>:30080/actuator/health`

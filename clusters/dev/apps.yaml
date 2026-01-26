@@ -1,0 +1,21 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dev-apps
+  namespace: devops
+spec:
+  project: default
+
+  source:
+    repoURL: git@github.com:TikTzuki/tiktuzki-charts.git
+    targetRevision: main
+    path: apps/dev
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: devops
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

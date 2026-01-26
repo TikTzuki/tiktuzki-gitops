@@ -1,0 +1,26 @@
+{{- if and .Values.persistence.enabled .Values.persistence.useLocalVolume }}
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: {{ include "room-manager.fullname" . }}-logs-pv
+  labels:
+    {{- include "room-manager.labels" . | nindent 4 }}
+spec:
+  capacity:
+    storage: {{ .Values.persistence.size }}
+  volumeMode: Filesystem
+  accessModes:
+    {{- toYaml .Values.persistence.accessModes | nindent 4 }}
+  persistentVolumeReclaimPolicy: Retain
+  {{- if .Values.persistence.storageClass }}
+  storageClassName: {{ .Values.persistence.storageClass }}
+  {{- else }}
+  storageClassName: ""
+  {{- end }}
+  local:
+    path: {{ .Values.persistence.localPath }}
+  {{- with .Values.persistence.nodeAffinity }}
+  nodeAffinity:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}

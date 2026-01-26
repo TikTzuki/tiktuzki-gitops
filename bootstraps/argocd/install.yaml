@@ -1,0 +1,30 @@
+# To install Argo CD, run:
+# kubectl apply -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml -n devops
+
+# Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: devops
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: argocd-server
+  namespace: devops
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: public-argocd-server
+  namespace: devops
+spec:
+  type: NodePort
+  ports:
+    - name: https
+      port: 80
+      targetPort: 8080
+      protocol: TCP
+      nodePort: 30444
+  selector:
+    app.kubernetes.io/name: argocd-server

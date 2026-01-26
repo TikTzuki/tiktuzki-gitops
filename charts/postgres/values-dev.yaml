@@ -1,0 +1,36 @@
+# PostgreSQL configuration
+postgres:
+  database: postgres
+  username: postgres
+  existingSecret: database-secret
+  existingSecretPasswordKey: postgres-password
+
+# Persistence configuration with local volume
+persistence:
+  enabled: true
+  size: 20Gi
+  useLocalVolume: true
+  localPath: /home/tik/data/postgres
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - tik  # Change to your actual node name
+
+# Service configuration
+service:
+  type: NodePort
+  port: 5432
+  nodePort: 31432
+
+# Resource limits
+resources:
+  limits:
+    cpu: 1000m
+    memory: 2Gi
+  requests:
+    cpu: 500m
+    memory: 1Gi

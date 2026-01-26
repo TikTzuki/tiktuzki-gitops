@@ -1,0 +1,91 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: room-manager
+  namespace: argocd
+spec:
+  destination:
+    name: ''
+    namespace: default
+    server: 'https://kubernetes.default.svc'
+  source:
+    repoURL: 'git@github.com:TikTzuki/tiktuzki-charts.git'
+    targetRevision: main
+    path: charts/room-manager
+    helm:
+      values: |
+        # Room Manager Configuration
+        replicaCount: 1
+
+        image:
+          repository: tiktuzki/room-manager
+          pullPolicy: IfNotPresent
+          tag: "latest"  # Update with specific version
+
+        # Spring Boot configuration
+        springBoot:
+          javaOpts: "-Xms512m -Xmx1024m"
+          profiles: "prod"
+
+        # Service configuration
+        service:
+          type: NodePort
+          port: 8080
+          nodePort: 31001
+
+        # Persistence configuration for logs with local volume
+        persistence:
+          enabled: true
+          size: 5Gi
+          useLocalVolume: true
+          localPath: /home/tik/data/room-manager/logs
+          nodeAffinity:
+            required:
+              nodeSelectorTerms:
+                - matchExpressions:
+                    - key: kubernetes.io/hostname
+                      operator: In
+                      values:
+                        - tik
+
+        # Health probes
+        livenessProbe:
+          httpGet:
+            path: /actuator/health/liveness
+            port: http
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+
+        readinessProbe:
+          httpGet:
+            path: /actuator/health/readiness
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+
+        # Resource limits
+        resources:
+          limits:
+            cpu: 1000m
+            memory: 1Gi
+          requests:
+            cpu: 500m
+            memory: 512Mi
+
+  project: default
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        maxDuration: 3m0s
+        factor: 2

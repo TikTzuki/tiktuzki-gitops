@@ -2,9 +2,9 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: {{ include "room-manager.fullname" . }}
+  name: {{ include "room-manager-web.fullname" . }}
   labels:
-    {{- include "room-manager.labels" . | nindent 4 }}
+    {{- include "room-manager-web.labels" . | nindent 4 }}
   {{- with .Values.ingress.annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
@@ -35,7 +35,7 @@ spec:
             {{- end }}
             backend:
               service:
-                name: {{ include "room-manager.fullname" $ }}
+                name: {{ include "room-manager-web.fullname" $ }}
                 port:
                   number: {{ $.Values.service.port }}
           {{- end }}

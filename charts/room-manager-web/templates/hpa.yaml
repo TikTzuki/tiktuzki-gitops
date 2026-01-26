@@ -2,14 +2,14 @@
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: {{ include "room-manager.fullname" . }}
+  name: {{ include "room-manager-web.fullname" . }}
   labels:
-    {{- include "room-manager.labels" . | nindent 4 }}
+    {{- include "room-manager-web.labels" . | nindent 4 }}
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: {{ include "room-manager.fullname" . }}
+    name: {{ include "room-manager-web.fullname" . }}
   minReplicas: {{ .Values.autoscaling.minReplicas }}
   maxReplicas: {{ .Values.autoscaling.maxReplicas }}
   metrics:
