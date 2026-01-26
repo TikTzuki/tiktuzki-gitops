@@ -197,7 +197,7 @@ database:
   ## @param database.password Database password (only used when not using embedded database)
   password: ""
   ## @param database.existingSecret Name of existing secret for database credentials (only used when not using embedded database)
-  existingSecret: "database-secret.database"
+  existingSecret: "keycloak-secret"
   ## @param database.secretKeys Secret keys for database credentials (only used when not using embedded database)
   secretKeys:
     passwordKey: "postgres-password"
