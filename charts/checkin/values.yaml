@@ -141,6 +141,19 @@ autoscaling:
   targetCPUUtilizationPercentage: 80
   # targetMemoryUtilizationPercentage: 80
 
+# Persistence configuration for data storage
+persistence:
+  enabled: false
+  storageClass: ""
+  accessMode: ReadWriteOnce
+  size: 1Gi
+  # Local PV configuration
+  local:
+    enabled: false
+    node: node1
+    path: /home/tik/data/
+    reclaimPolicy: Retain
+
 # Additional volumes on the output Deployment definition.
 volumes: [ ]
 # - name: foo
