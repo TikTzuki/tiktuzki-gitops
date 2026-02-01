@@ -168,3 +168,5 @@ env:
       secretKeyRef:
         name: google-tts-secret
         key: api-key
+  - name: ALLOWED_ORIGINS
+    value: "*"
