@@ -1,0 +1,25 @@
+{{- if and .Values.persistence.enabled .Values.persistence.local.enabled }}
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: {{ include "checkin.fullname" . }}-data-pv
+  labels:
+    {{- include "checkin.labels" . | nindent 4 }}
+spec:
+  capacity:
+    storage: {{ .Values.persistence.size | default "1Gi" }}
+  accessModes:
+    - {{ .Values.persistence.accessMode | default "ReadWriteOnce" }}
+  persistentVolumeReclaimPolicy: {{ .Values.persistence.local.reclaimPolicy | default "Retain" }}
+  storageClassName: {{ .Values.persistence.storageClass | default "" }}
+  local:
+    path: {{ .Values.persistence.local.path }}
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - {{ .Values.persistence.local.node }}
+{{- end }}
