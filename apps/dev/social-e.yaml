@@ -21,3 +21,12 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: google-tts-secret
+  namespace: demo
+type: Opaque
+data:
+  api-key: QUl6YVN5QzZfZHcyUTBJa2dDYTdXYnZwaFFudVFYNmN5WDZfTnRJ

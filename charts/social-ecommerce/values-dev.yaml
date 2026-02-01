@@ -160,3 +160,11 @@ nodeSelector: { }
 tolerations: [ ]
 
 affinity: { }
+
+# Environment variables for the container
+env:
+  - name: GOOGLE_TTS_API_KEY
+    valueFrom:
+      secretKeyRef:
+        name: google-tts-secret
+        key: api-key
