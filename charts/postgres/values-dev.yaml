@@ -40,6 +40,12 @@ service:
   port: 5432
   nodePort: 30432
 
+# Pod configuration
+podAnnotations: { }
+podLabels: { }
+podSecurityContext: { }
+securityContext: { }
+
 # Resources
 resources:
   limits:
