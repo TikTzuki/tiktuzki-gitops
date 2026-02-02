@@ -8,9 +8,9 @@ replicaCount: 1
 
 # Container image
 image:
-  repository: timescale/timescaledb
+  repository: postgres
   pullPolicy: IfNotPresent
-  tag: "latest-pg16"
+  tag: "16"
 
 imagePullSecrets: [ ]
 
@@ -21,11 +21,6 @@ postgres:
   password: ""
   existingSecret: ""
   existingSecretPasswordKey: "postgres-password"
-
-# TimescaleDB configuration
-timescaledb:
-  enabled: true
-  telemetry: "off"
 
 # Persistence configuration
 persistence:
