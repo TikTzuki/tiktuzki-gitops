@@ -17,6 +17,9 @@ spec:
       targetPort: {{ .Values.service.targetPort }}
       protocol: TCP
       name: postgresql
+      {{- if and (eq .Values.service.type "NodePort") .Values.service.nodePort }}
+      nodePort: {{ .Values.service.nodePort }}
+      {{- end }}
   selector:
     {{- include "timescaledb.selectorLabels" . | nindent 4 }}
 ---

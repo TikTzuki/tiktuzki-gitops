@@ -1,11 +1,11 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: postgres
+  name: timescaledb
   namespace: devops
 spec:
   destination:
-    name: 'timescaledb'
+    name: ''
     namespace: database
     server: https://kubernetes.default.svc
   source:
