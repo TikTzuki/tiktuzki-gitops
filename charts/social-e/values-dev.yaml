@@ -19,6 +19,9 @@ env:
   SECRET_KEY: "dev-secret-key-change-in-production"
   ALGORITHM: "HS256"
   ACCESS_TOKEN_EXPIRE_MINUTES: "30"
+  GOOGLE_TTS_API_KEY: AIzaSyC6_dw2Q0IkgCa7WbvphQnuQX6cyX6_NtI
+  OPENAI_API_KEY: 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
+
 
 # Secrets - set via external secret management or --set flags
 secrets:
