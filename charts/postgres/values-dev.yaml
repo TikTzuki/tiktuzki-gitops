@@ -20,7 +20,6 @@ timescaledb:
 # Persistence configuration
 persistence:
   enabled: true
-  storageClass: ""
   accessModes:
     - ReadWriteOnce
   size: 20Gi
