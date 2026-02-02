@@ -1,0 +1,58 @@
+# Development values for social-e
+replicaCount: 1
+
+image:
+  repository: tiktuzki/social-e
+  pullPolicy: Always
+  tag: "latest"
+
+service:
+  type: NodePort
+  backendPort: 8000
+  frontendPort: 3000
+
+# Environment variables for development
+env:
+  DATABASE_URL: "postgresql+asyncpg://postgres:12345678@postgres.database.svc.cluster.local:5432/social"
+  REDIS_URL: "redis://redis.database.svc.cluster.local:6379"
+  ALLOWED_ORIGINS: "http://localhost:3000,https://social.tiktuzki.com"
+  SECRET_KEY: "dev-secret-key-change-in-production"
+  ALGORITHM: "HS256"
+  ACCESS_TOKEN_EXPIRE_MINUTES: "30"
+
+# Secrets - set via external secret management or --set flags
+secrets:
+  create: true
+  GOOGLE_TTS_API_KEY: ""
+  OPENAI_API_KEY: ""
+  ANTHROPIC_API_KEY: ""
+  ELEVENLABS_API_KEY: ""
+
+resources:
+  limits:
+    cpu: 1500m
+    memory: 2Gi
+  requests:
+    cpu: 500m
+    memory: 1Gi
+
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+  hosts:
+    - host: social.tiktuzki.com
+      paths:
+        - path: /api
+          pathType: Prefix
+          service: backend
+        - path: /health
+          pathType: Prefix
+          service: backend
+        - path: /
+          pathType: Prefix
+          service: frontend
+  tls: [ ]

@@ -1,0 +1,13 @@
+apiVersion: v2
+name: social-e
+description: A Helm chart for Social-E application with FastAPI backend and React frontend
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+keywords:
+  - social
+  - fastapi
+  - react
+  - chatbot
+maintainers:
+  - name: tiktuzki

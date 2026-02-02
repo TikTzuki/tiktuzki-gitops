@@ -1,0 +1,140 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "social-e.fullname" . }}
+  labels:
+    {{- include "social-e.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "social-e.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "social-e.labels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "social-e.serviceAccountName" . }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: {{ .Chart.Name }}
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: backend
+              containerPort: {{ .Values.backend.port }}
+              protocol: TCP
+            - name: frontend
+              containerPort: {{ .Values.frontend.port }}
+              protocol: TCP
+          env:
+            # Database configuration
+            - name: DATABASE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "social-e.fullname" . }}-config
+                  key: DATABASE_URL
+            # Redis configuration
+            - name: REDIS_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "social-e.fullname" . }}-config
+                  key: REDIS_URL
+            # CORS configuration
+            - name: ALLOWED_ORIGINS
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "social-e.fullname" . }}-config
+                  key: ALLOWED_ORIGINS
+            # JWT configuration
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "social-e.fullname" . }}-secret
+                  key: SECRET_KEY
+            - name: ALGORITHM
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "social-e.fullname" . }}-config
+                  key: ALGORITHM
+            - name: ACCESS_TOKEN_EXPIRE_MINUTES
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "social-e.fullname" . }}-config
+                  key: ACCESS_TOKEN_EXPIRE_MINUTES
+            # API Keys (from secrets)
+            {{- if .Values.secrets.GOOGLE_TTS_API_KEY }}
+            - name: GOOGLE_TTS_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "social-e.fullname" . }}-secret
+                  key: GOOGLE_TTS_API_KEY
+            {{- end }}
+            {{- if .Values.secrets.OPENAI_API_KEY }}
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "social-e.fullname" . }}-secret
+                  key: OPENAI_API_KEY
+            {{- end }}
+            {{- if .Values.secrets.ANTHROPIC_API_KEY }}
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "social-e.fullname" . }}-secret
+                  key: ANTHROPIC_API_KEY
+            {{- end }}
+            {{- if .Values.secrets.ELEVENLABS_API_KEY }}
+            - name: ELEVENLABS_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "social-e.fullname" . }}-secret
+                  key: ELEVENLABS_API_KEY
+            {{- end }}
+            # Frontend environment
+            - name: VITE_API_URL
+              value: "/api/v1"
+          {{- with .Values.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
