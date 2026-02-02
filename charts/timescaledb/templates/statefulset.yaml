@@ -1,0 +1,183 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "timescaledb.fullname" . }}
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    {{- include "timescaledb.labels" . | nindent 4 }}
+  {{- if .Values.commonAnnotations }}
+  annotations:
+    {{- include "timescaledb.annotations" . | nindent 4 }}
+  {{- end }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  serviceName: {{ include "timescaledb.fullname" . }}-headless
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      {{- include "timescaledb.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "timescaledb.labels" . | nindent 8 }}
+      {{- with .Values.commonAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+{{- with (include "timescaledb.imagePullSecrets" .) }}
+{{ . | nindent 6 }}
+{{- end }}
+      securityContext: {{ include "cloudpirates.renderPodSecurityContext" . | nindent 8 }}
+      {{- if .Values.priorityClassName }}
+      priorityClassName: {{ .Values.priorityClassName }}
+      {{- end }}
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext: {{ include "cloudpirates.renderContainerSecurityContext" . | nindent 12 }}
+          image: {{ include "timescaledb.image" . }}
+          imagePullPolicy: {{ .Values.image.imagePullPolicy }}
+          env:
+            # Default PostgreSQL environment variables
+            - name: PGDATA
+              value: {{ include "timescaledb.dataDir" . }}/pgdata
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "timescaledb.secretName" . }}
+                  key: {{ include "timescaledb.adminPasswordKey" . }}
+            # PostgreSQL configuration
+            {{- if .Values.config.postgresqlMaxConnections }}
+            - name: POSTGRES_MAX_CONNECTIONS
+              value: {{ .Values.config.postgresqlMaxConnections | quote }}
+            {{- end }}
+            {{- if .Values.config.postgresqlSharedBuffers }}
+            - name: POSTGRES_SHARED_BUFFERS
+              value: {{ .Values.config.postgresqlSharedBuffers | quote }}
+            {{- end }}
+            {{- if .Values.config.postgresqlEffectiveCacheSize }}
+            - name: POSTGRES_EFFECTIVE_CACHE_SIZE
+              value: {{ .Values.config.postgresqlEffectiveCacheSize | quote }}
+            {{- end }}
+            {{- with .Values.extraEnvVars }}
+{{ toYaml . | indent 12 }}
+            {{- end }}
+          ports:
+            - name: postgresql
+              containerPort: {{ .Values.service.targetPort }}
+              protocol: TCP
+          {{- if .Values.livenessProbe.enabled }}
+          livenessProbe:
+            exec:
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  pg_isready -U postgres -d postgres -h 127.0.0.1 -p {{ .Values.service.targetPort }}
+            initialDelaySeconds: {{ .Values.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.livenessProbe.timeoutSeconds }}
+            successThreshold: {{ .Values.livenessProbe.successThreshold }}
+            failureThreshold: {{ .Values.livenessProbe.failureThreshold }}
+          {{- end }}
+          {{- if .Values.readinessProbe.enabled }}
+          readinessProbe:
+            exec:
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  pg_isready -U postgres -d postgres -h 127.0.0.1 -p {{ .Values.service.targetPort }}
+            initialDelaySeconds: {{ .Values.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.readinessProbe.timeoutSeconds }}
+            successThreshold: {{ .Values.readinessProbe.successThreshold }}
+            failureThreshold: {{ .Values.readinessProbe.failureThreshold }}
+          {{- end }}
+          {{- if .Values.startupProbe.enabled }}
+          startupProbe:
+            exec:
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  pg_isready -U postgres -d postgres -h 127.0.0.1 -p {{ .Values.service.targetPort }}
+            initialDelaySeconds: {{ .Values.startupProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.startupProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.startupProbe.timeoutSeconds }}
+            successThreshold: {{ .Values.startupProbe.successThreshold }}
+            failureThreshold: {{ .Values.startupProbe.failureThreshold }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: {{ include "timescaledb.dataDir" . }}
+            {{- if not .Values.config.existingConfigmap }}
+            - name: config
+              mountPath: {{ include "timescaledb.configDir" . }}
+            {{- end }}
+            - name: run
+              mountPath: {{ include "timescaledb.runDir" . }}
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        {{- if not .Values.persistence.enabled }}
+        - name: data
+          emptyDir: { }
+        {{- else if .Values.persistence.existingClaim }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ .Values.persistence.existingClaim }}
+        {{- end }}
+        {{- if not .Values.config.existingConfigmap }}
+        - name: config
+          configMap:
+            name: {{ include "timescaledb.configmapName" . }}
+            optional: true
+        {{- end }}
+        - name: run
+          emptyDir: { }
+        - name: tmp
+          emptyDir: { }
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  {{- if and .Values.persistence.enabled (not .Values.persistence.existingClaim) }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      {{- with $labels := merge (include "timescaledb.selectorLabels" . | fromYaml) .Values.persistence.labels .Values.podLabels }}
+        labels:
+        {{- toYaml $labels | nindent 8 }}
+      {{- end }}
+      {{- with .Values.persistence.annotations }}
+        annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      spec:
+        accessModes:
+        {{- range .Values.persistence.accessModes }}
+          - {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.persistence.size | quote }}
+      {{- if .Values.persistence.storageClass }}
+      {{- if (eq "-" .Values.persistence.storageClass) }}
+        storageClassName: ""
+      {{- else }}
+        storageClassName: {{ .Values.persistence.storageClass | quote }}
+      {{- end }}
+      {{- end }}
+  {{- end }}

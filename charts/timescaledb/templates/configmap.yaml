@@ -1,0 +1,106 @@
+{{- if not .Values.config.existingConfigmap }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "timescaledb.fullname" . }}
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    {{- include "timescaledb.labels" . | nindent 4 }}
+  {{- if .Values.commonAnnotations }}
+  annotations:
+    {{- include "timescaledb.annotations" . | nindent 4 }}
+  {{- end }}
+data:
+  postgresql.conf: |
+    # PostgreSQL configuration file
+
+    # Connection Settings
+    {{- if .Values.config.postgresqlMaxConnections }}
+    max_connections = {{ .Values.config.postgresqlMaxConnections }}
+    {{- else }}
+    max_connections = 100
+    {{- end }}
+
+    # Memory Settings
+    {{- if .Values.config.postgresqlSharedBuffers }}
+    shared_buffers = {{ .Values.config.postgresqlSharedBuffers }}
+    {{- else }}
+    shared_buffers = 128MB
+    {{- end }}
+
+    {{- if .Values.config.postgresqlEffectiveCacheSize }}
+    effective_cache_size = {{ .Values.config.postgresqlEffectiveCacheSize }}
+    {{- else }}
+    effective_cache_size = 4GB
+    {{- end }}
+
+    {{- if .Values.config.postgresqlWorkMem }}
+    work_mem = {{ .Values.config.postgresqlWorkMem }}
+    {{- else }}
+    work_mem = 4MB
+    {{- end }}
+
+    {{- if .Values.config.postgresqlMaintenanceWorkMem }}
+    maintenance_work_mem = {{ .Values.config.postgresqlMaintenanceWorkMem }}
+    {{- else }}
+    maintenance_work_mem = 64MB
+    {{- end }}
+
+    # WAL Settings
+    {{- if .Values.config.postgresqlWalBuffers }}
+    wal_buffers = {{ .Values.config.postgresqlWalBuffers }}
+    {{- else }}
+    wal_buffers = 16MB
+    {{- end }}
+
+    # Checkpoint Settings
+    {{- if .Values.config.postgresqlCheckpointCompletionTarget }}
+    checkpoint_completion_target = {{ .Values.config.postgresqlCheckpointCompletionTarget }}
+    {{- else }}
+    checkpoint_completion_target = 0.7
+    {{- end }}
+
+    # Query Planner Settings
+    {{- if .Values.config.postgresqlRandomPageCost }}
+    random_page_cost = {{ .Values.config.postgresqlRandomPageCost }}
+    {{- else }}
+    random_page_cost = 1.1
+    {{- end }}
+
+    # Logging Settings
+    log_destination = 'stderr'
+    logging_collector = off
+    log_min_messages = warning
+    log_min_error_statement = error
+
+    {{- if .Values.config.postgresqlLogStatement }}
+    log_statement = {{ .Values.config.postgresqlLogStatement | quote }}
+    {{- else }}
+    log_statement = 'none'
+    {{- end }}
+
+    {{- if .Values.config.postgresqlLogMinDurationStatement }}
+    log_min_duration_statement = {{ .Values.config.postgresqlLogMinDurationStatement }}
+    {{- else }}
+    log_min_duration_statement = -1
+    {{- end }}
+
+    # Shared Libraries
+    {{- if .Values.config.postgresqlSharedPreloadLibraries }}
+    shared_preload_libraries = {{ .Values.config.postgresqlSharedPreloadLibraries | quote }}
+    {{- end }}
+
+    # Locale and Formatting
+    datestyle = 'iso, mdy'
+    timezone = 'UTC'
+    lc_messages = 'en_US.utf8'
+    lc_monetary = 'en_US.utf8'
+    lc_numeric = 'en_US.utf8'
+    lc_time = 'en_US.utf8'
+    default_text_search_config = 'pg_catalog.english'
+
+    # Additional Configuration
+    {{- range .Values.config.extraConfig }}
+    {{ . }}
+    {{- end }}
+{{- end }}

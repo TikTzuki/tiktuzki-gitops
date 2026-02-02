@@ -1,0 +1,217 @@
+## @section Global parameters
+global:
+  ## @param global.imageRegistry Global Docker Image registry
+  imageRegistry: ""
+  ## @param global.imagePullSecrets Global Docker registry secret names as an array
+  imagePullSecrets: [ ]
+
+## @section Common parameters
+## @param nameOverride String to partially override timescaledb.fullname
+nameOverride: ""
+## @param fullnameOverride String to fully override timescaledb.fullname
+fullnameOverride: ""
+## @param commonLabels Labels to add to all deployed objects
+commonLabels: { }
+## @param commonAnnotations Annotations to add to all deployed objects
+commonAnnotations: { }
+
+## @section TimescaleDB image configuration
+image:
+  ## @param image.registry TimescaleDB image registry
+  registry: docker.io
+  ## @param image.repository TimescaleDB image repository
+  repository: timescale/timescaledb
+  ## @param image.tag TimescaleDB image tag (immutable tags are recommended)
+  tag: "2.24.0-pg17@sha256:8ab414f7f73fd47dfa643097f1a753e2ac009c70fcb0de5717d0e79d21e7b7d6"
+  ## @param image.imagePullPolicy TimescaleDB image pull policy
+  imagePullPolicy: Always
+
+## @section Deployment configuration
+## @param replicaCount Number of TimescaleDB replicas to deploy (Note: TimescaleDB doesn't support multi-master replication by default)
+replicaCount: 1
+
+## @section Security Context
+podSecurityContext:
+  ## @param podSecurityContext.fsGroup Group ID for the volumes of the pod
+  fsGroup: 999
+
+## @section Pod labels
+podLabels: { }
+
+containerSecurityContext:
+  ## @param containerSecurityContext.allowPrivilegeEscalation Enable container privilege escalation
+  allowPrivilegeEscalation: false
+  ## @param containerSecurityContext.runAsNonRoot Configure the container to run as a non-root user
+  runAsNonRoot: true
+  ## @param containerSecurityContext.runAsUser User ID for the TimescaleDB container
+  runAsUser: 999
+  ## @param containerSecurityContext.runAsGroup Group ID for the TimescaleDB container
+  runAsGroup: 999
+  ## @param containerSecurityContext.readOnlyRootFilesystem Mount container root filesystem as read-only
+  readOnlyRootFilesystem: false
+  ## @param containerSecurityContext.capabilities.drop Linux capabilities to be dropped
+  capabilities:
+    drop:
+      - ALL
+
+## @param priorityClassName Priority class for the timescaledb instance
+priorityClassName: ""
+
+## @section TimescaleDB Authentication
+auth:
+  ## @param auth.postgresPassword Password for the postgres admin user. If not set, a random password will be generated
+  postgresPassword: ""
+  ## @param auth.existingSecret Name of existing secret to use for TimescaleDB credentials
+  existingSecret: ""
+  ## @param auth.secretKeys.adminPasswordKey Name of key in existing secret to use for TimescaleDB credentials
+  secretKeys:
+    adminPasswordKey: "postgres-password"
+
+## @section TimescaleDB Configuration
+config:
+  ## @param config.postgresqlSharedPreloadLibraries Shared preload libraries (comma-separated list)
+  postgresqlSharedPreloadLibraries: "timescaledb"
+  ## @param config.postgresqlMaxConnections Maximum number of connections
+  postgresqlMaxConnections: 100
+  ## @param config.postgresqlSharedBuffers Amount of memory the database server uses for shared memory buffers
+  postgresqlSharedBuffers: ""
+  ## @param config.postgresqlEffectiveCacheSize Effective cache size
+  postgresqlEffectiveCacheSize: ""
+  ## @param config.postgresqlWorkMem Amount of memory to be used by internal sort operations and hash tables
+  postgresqlWorkMem: ""
+  ## @param config.postgresqlMaintenanceWorkMem Maximum amount of memory to be used by maintenance operations
+  postgresqlMaintenanceWorkMem: ""
+  ## @param config.postgresqlWalBuffers Amount of memory used in shared memory for WAL data
+  postgresqlWalBuffers: ""
+  ## @param config.postgresqlCheckpointCompletionTarget Time spent flushing dirty buffers during checkpoint, as fraction of checkpoint interval
+  postgresqlCheckpointCompletionTarget: ""
+  ## @param config.postgresqlRandomPageCost Sets the planner's estimate of the cost of a non-sequentially-fetched disk page
+  postgresqlRandomPageCost: ""
+  ## @param config.postgresqlLogStatement Sets the type of statements logged
+  postgresqlLogStatement: ""
+  ## @param config.postgresqlLogMinDurationStatement Sets the minimum execution time above which statements will be logged
+  postgresqlLogMinDurationStatement: ""
+  ## @param config.extraConfig Additional TimescaleDB configuration parameters
+  extraConfig: [ ]
+  ## @param config.timescaledbTelemetry Enable/disable TimescaleDB telemetry
+  timescaledbTelemetry: "off"
+  ## @param config.timescaledbMaxBackgroundWorkers Maximum number of TimescaleDB background workers
+  timescaledbMaxBackgroundWorkers: 8
+  ## @param config.existingConfigmap Name of existing ConfigMap with TimescaleDB configuration
+  existingConfigmap: ""
+
+## @section Service configuration
+service:
+  ## @param service.type TimescaleDB service type
+  type: ClusterIP
+  ## @param service.port TimescaleDB service port
+  port: 5432
+  ## @param service.targetPort TimescaleDB container port
+  targetPort: 5432
+  ## @param service.annotations Service annotations
+  annotations: { }
+
+## @section Resources
+resources:
+  { }
+  ## We usually recommend not to specify default resources and to leave this as a conscious
+  ## choice for the user. This also increases chances charts run on environments with little
+  ## resources, such as Minikube. If you do want to specify resources, uncomment the following
+  ## lines, adjust them as necessary, and remove the curly braces after 'resources:'.
+  # limits:
+  #   cpu: 500m
+  #   memory: 512Mi
+  # requests:
+  #   cpu: 250m
+#   memory: 256Mi
+
+## @section Persistence
+persistence:
+  ## @param persistence.enabled Enable persistence using Persistent Volume Claims
+  enabled: true
+  ## @param persistence.storageClass Persistent Volume storage class
+  storageClass: ""
+  ## @param persistence.annotations Persistent Volume Claim annotations
+  annotations: { }
+  ## @param persistence.labels Labels for persistent volume claims
+  labels: { }
+  ## @param persistence.size Persistent Volume size
+  size: 8Gi
+  ## @param persistence.accessModes Persistent Volume access modes
+  accessModes:
+    - ReadWriteOnce
+  ## @param persistence.existingClaim The name of an existing PVC to use for persistence
+  existingClaim: ""
+
+## @section Liveness and readiness probes
+livenessProbe:
+  ## @param livenessProbe.enabled Enable livenessProbe on TimescaleDB containers
+  enabled: true
+  ## @param livenessProbe.initialDelaySeconds Initial delay seconds for livenessProbe
+  initialDelaySeconds: 30
+  ## @param livenessProbe.periodSeconds Period seconds for livenessProbe
+  periodSeconds: 10
+  ## @param livenessProbe.timeoutSeconds Timeout seconds for livenessProbe
+  timeoutSeconds: 5
+  ## @param livenessProbe.failureThreshold Failure threshold for livenessProbe
+  failureThreshold: 3
+  ## @param livenessProbe.successThreshold Success threshold for livenessProbe
+  successThreshold: 1
+
+readinessProbe:
+  ## @param readinessProbe.enabled Enable readinessProbe on TimescaleDB containers
+  enabled: true
+  ## @param readinessProbe.initialDelaySeconds Initial delay seconds for readinessProbe
+  initialDelaySeconds: 5
+  ## @param readinessProbe.periodSeconds Period seconds for readinessProbe
+  periodSeconds: 5
+  ## @param readinessProbe.timeoutSeconds Timeout seconds for readinessProbe
+  timeoutSeconds: 5
+  ## @param readinessProbe.failureThreshold Failure threshold for readinessProbe
+  failureThreshold: 3
+  ## @param readinessProbe.successThreshold Success threshold for readinessProbe
+  successThreshold: 1
+
+startupProbe:
+  ## @param startupProbe.enabled Enable startupProbe on TimescaleDB containers
+  enabled: true
+  ## @param startupProbe.initialDelaySeconds Initial delay seconds for startupProbe
+  initialDelaySeconds: 30
+  ## @param startupProbe.periodSeconds Period seconds for startupProbe
+  periodSeconds: 10
+  ## @param startupProbe.timeoutSeconds Timeout seconds for startupProbe
+  timeoutSeconds: 5
+  ## @param startupProbe.failureThreshold Failure threshold for startupProbe
+  failureThreshold: 30
+  ## @param startupProbe.successThreshold Success threshold for startupProbe
+  successThreshold: 1
+
+## @section Node Selection
+## @param nodeSelector Node labels for pod assignment
+nodeSelector: { }
+
+## @param tolerations Toleration labels for pod assignment
+tolerations: [ ]
+
+## @param affinity Affinity settings for pod assignment
+affinity: { }
+
+## @param extraObjects Array of extra objects to deploy with the release
+extraObjects: [ ]
+# - apiVersion: v1
+#   kind: ConfigMap
+#   metadata:
+#     name: extra-config
+#     namespace: "{{ .Release.Namespace }}"
+#   data:
+#     key: value
+
+## @param extraEnvVars Additional environment variables to set
+extraEnvVars: [ ]
+  # - name: CUSTOM_VAR
+  #   value: "custom-value"
+  # - name: SECRET_VAR
+  #   valueFrom:
+  #     secretKeyRef:
+  #       name: my-secret
+#       key: secret-key
