@@ -14,7 +14,7 @@ postgres:
 
 # TimescaleDB configuration
 timescaledb:
-  enabled: true
+  enabled: false
   telemetry: "off"
 
 # Persistence configuration
