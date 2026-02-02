@@ -1,0 +1,44 @@
+# Development values for timescaledb.
+
+# TimescaleDB Authentication
+auth:
+  existingSecret: database-secret
+  secretKeys:
+    adminPasswordKey: postgres-password
+
+# TimescaleDB Configuration
+config:
+  timescaledbTelemetry: "off"
+
+# Service configuration
+service:
+  type: NodePort
+  port: 5432
+  targetPort: 5432
+  nodePort: 30433
+
+# Persistence configuration
+persistence:
+  enabled: true
+  size: 20Gi
+  accessModes:
+    - ReadWriteOnce
+  useLocalVolume: true
+  localPath: /home/tik/data/timescaledb
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - node1
+
+# Resources
+resources:
+  limits:
+    cpu: 1.5
+    memory: 4Gi
+  requests:
+    cpu: 500m
+    memory: 1Gi

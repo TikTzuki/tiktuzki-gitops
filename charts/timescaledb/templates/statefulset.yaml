@@ -179,5 +179,10 @@ spec:
       {{- else }}
         storageClassName: {{ .Values.persistence.storageClass | quote }}
       {{- end }}
+      {{- else if .Values.persistence.useLocalVolume }}
+        storageClassName: ""
+        selector:
+          matchLabels:
+            {{- include "timescaledb.selectorLabels" . | nindent 12 }}
       {{- end }}
   {{- end }}
