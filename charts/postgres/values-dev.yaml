@@ -1,3 +1,10 @@
+# Development values for postgres.
+
+image:
+  repository: timescale/timescaledb
+  pullPolicy: IfNotPresent
+  tag: "latest-pg16"
+
 # PostgreSQL configuration
 postgres:
   database: postgres
@@ -5,9 +12,17 @@ postgres:
   existingSecret: database-secret
   existingSecretPasswordKey: postgres-password
 
-# Persistence configuration with local volume
+# TimescaleDB configuration
+timescaledb:
+  enabled: true
+  telemetry: "off"
+
+# Persistence configuration
 persistence:
   enabled: true
+  storageClass: ""
+  accessModes:
+    - ReadWriteOnce
   size: 20Gi
   useLocalVolume: true
   localPath: /home/tik/data/postgres
@@ -18,19 +33,19 @@ persistence:
             - key: kubernetes.io/hostname
               operator: In
               values:
-                - node1 # Change to your actual node name
+                - node1
 
 # Service configuration
 service:
   type: NodePort
   port: 5432
-  nodePort: 31432
+  nodePort: 30432
 
-# Resource limits
+# Resources
 resources:
   limits:
-    cpu: 1000m
-    memory: 2Gi
+    cpu: 1.5
+    memory: 4Gi
   requests:
     cpu: 500m
     memory: 1Gi

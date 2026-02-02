@@ -57,6 +57,10 @@ spec:
             {{- end }}
             - name: PGDATA
               value: /var/lib/postgresql/data/pgdata
+            { { - if .Values.timescaledb.enabled } }
+            - name: TIMESCALEDB_TELEMETRY
+              value: { { .Values.timescaledb.telemetry | quote } }
+            { { - end } }
           ports:
             - name: postgresql
               containerPort: {{ .Values.service.port }}
