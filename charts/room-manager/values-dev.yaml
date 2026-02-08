@@ -89,7 +89,7 @@ persistence:
             - key: kubernetes.io/hostname
               operator: In
               values:
-                - tik
+                - node1
 
 resources:
   limits:
