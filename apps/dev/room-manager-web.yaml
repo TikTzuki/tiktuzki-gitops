@@ -5,7 +5,7 @@ metadata:
   namespace: devops
 spec:
   destination:
-    namespace: demo
+    namespace: room-manager
     server: https://kubernetes.default.svc
   project: default
   source:
