@@ -49,6 +49,9 @@ spec:
             - name: SPRING_PROFILES_ACTIVE
               value: {{ .Values.springBoot.profiles | quote }}
             {{- end }}
+            {{- with .Values.extraEnvVars }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           ports:
             - name: http
               containerPort: {{ .Values.service.port }}
@@ -66,14 +69,23 @@ spec:
             {{- toYaml . | nindent 12 }}
           {{- end }}
           volumeMounts:
+            {{- if .Values.config }}
+            - name: config
+              mountPath: /workspace/config
+            {{- end }}
             {{- if .Values.persistence.enabled }}
             - name: logs
-              mountPath: /app/logs
+              mountPath: /workspace/log
             {{- end }}
             {{- with .Values.volumeMounts }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
       volumes:
+        {{- if .Values.config }}
+        - name: config
+          configMap:
+            name: {{ include "room-manager.fullname" . }}-config
+        {{- end }}
         {{- if .Values.persistence.enabled }}
         - name: logs
           persistentVolumeClaim:

@@ -1,0 +1,23 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: room-manager
+  namespace: devops
+spec:
+  destination:
+    namespace: room-manager
+    server: https://kubernetes.default.svc
+  project: default
+  source:
+    repoURL: git@github.com:TikTzuki/tiktuzki-gitops.git
+    targetRevision: main
+    path: charts/room-manager
+    helm:
+      valueFiles:
+        - values-dev.yaml
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

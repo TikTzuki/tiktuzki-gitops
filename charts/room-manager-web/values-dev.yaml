@@ -1,0 +1,11 @@
+replicaCount: 1
+
+image:
+  repository: tiktuzki/room-manager-web
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+service:
+  type: NodePort
+  port: 80
+  nodePort: 32004

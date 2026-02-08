@@ -1,0 +1,11 @@
+{{- if .Values.config }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "room-manager.fullname" . }}-config
+  labels:
+    {{- include "room-manager.labels" . | nindent 4 }}
+data:
+  application.yaml: |-
+    {{- .Values.config.applicationYaml | nindent 4 }}
+{{- end }}
