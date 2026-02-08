@@ -19,16 +19,18 @@ config:
         virtual:
           enabled: true
       datasource:
-        url: jdbc:postgresql://postgres.database:5432/room_manager_prod
+        url: jdbc:postgresql://postgres.database:5432/room_manager?currentSchema=prod
         username: postgres
         driver-class-name: org.postgresql.Driver
         hikari:
-          maximum-pool-size: 2
+          maximum-pool-size: 10
       jpa:
         hibernate:
           ddl-auto: validate
           dialect: org.hibernate.dialect.PostgreSQLDialect
         show-sql: true
+        properties:
+          hibernate.jdbc.batch_size: 50
       security:
         oauth2:
           client:
@@ -49,8 +51,9 @@ config:
           resourceserver:
             jwt:
               issuer-uri: https://accounts.google.com
-      liquibase:
+      flyway:
         enabled: true
+        locations: classpath:db/migration
     management:
       endpoint:
         health:
@@ -59,8 +62,7 @@ config:
     logging:
       level:
         org:
-          rivero:
-            tiktuzki: debug
+          tiktuzki: debug
           springdoc: info
           springframework:
             web: info

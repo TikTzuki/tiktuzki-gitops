@@ -184,17 +184,18 @@ config:
         virtual:
           enabled: true
       datasource:
-        url: jdbc:postgresql://postgres-postgresql-hl.database:5432/room_manager
+        url: jdbc:postgresql://postgres.database:5432/room_manager
         username: postgres
-        password: postgres
         driver-class-name: org.postgresql.Driver
         hikari:
-          maximum-pool-size: 2
+          maximum-pool-size: 10
       jpa:
         hibernate:
           ddl-auto: validate
           dialect: org.hibernate.dialect.PostgreSQLDialect
         show-sql: true
+        properties:
+          hibernate.jdbc.batch_size: 50
       security:
         oauth2:
           client:
@@ -215,8 +216,9 @@ config:
           resourceserver:
             jwt:
               issuer-uri: https://accounts.google.com
-      liquibase:
+      flyway:
         enabled: true
+        locations: classpath:db/migration
     management:
       endpoint:
         health:
@@ -225,36 +227,27 @@ config:
     logging:
       level:
         org:
-          tiktuzki:
-            roommanager: debug
+          tiktuzki: debug
           springdoc: info
           springframework:
             web: info
           postgresql: debug
         java:
           sql: info
-# Spring Boot configuration
+
+
 springBoot:
-  # Java options
   javaOpts: "-Xms512m -Xmx1024m"
-  # Active profiles
   profiles: "prod"
 
-# Persistence configuration for logs
 persistence:
   enabled: true
-  # Storage class name (leave empty for default)
   storageClass: ""
-  # Access modes
   accessModes:
     - ReadWriteOnce
-  # Storage size for logs
   size: 5Gi
-  # Use local node volume
   useLocalVolume: true
-  # Local volume path on the node for logs
   localPath: /mnt/data/room-manager/logs
-  # Node selector for local volume (specify which node has the local storage)
   nodeAffinity:
     required:
       nodeSelectorTerms:
@@ -264,3 +257,17 @@ persistence:
               values:
                 - node1  # Change this to your node name
 
+extraEnvVars:
+  - name: SPRING_DATASOURCE_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: room-manager-secret
+        key: spring-datasource-password
+  - name: SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_SECRET
+    valueFrom:
+      secretKeyRef:
+        name: room-manager-secret
+        key: google-client-secret
+
+## @param extraEnvVarsSecret Name of a secret containing additional environment variables
+extraEnvVarsSecret: ""
