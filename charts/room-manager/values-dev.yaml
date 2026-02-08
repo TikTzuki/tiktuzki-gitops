@@ -19,7 +19,7 @@ config:
         virtual:
           enabled: true
       datasource:
-        url: jdbc:postgresql://postgres.database.database:5432/room_manager_prod
+        url: jdbc:postgresql://postgres.database:5432/room_manager_prod
         username: postgres
         driver-class-name: org.postgresql.Driver
         hikari:
