@@ -12,7 +12,7 @@ service:
 
 extraEnvVars:
   - name: GOOGLE_CLIENT_ID
-    value: 759254302934-h0u67i38q8idqkvvjr5v0dmfmni59a0m.apps.googleusercontent.com
+    value: 596742570337-posdisevg00segpmhb55melalp0a4led.apps.googleusercontent.com
   - name: GOOGLE_CLIENT_SECRET
     valueFrom:
       secretKeyRef:
