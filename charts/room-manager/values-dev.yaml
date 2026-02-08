@@ -116,3 +116,9 @@ extraEnvVars:
 
 ## @param extraEnvVarsSecret Name of a secret containing additional environment variables
 extraEnvVarsSecret: ""
+
+serviceAccount:
+  create: false
+  automount: true
+  annotations: { }
+  name: ""

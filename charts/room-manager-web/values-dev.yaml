@@ -10,6 +10,21 @@ service:
   port: 3000
   nodePort: 32004
 
+extraEnvVars:
+  - name: GOOGLE_CLIENT_ID
+    value: 759254302934-h0u67i38q8idqkvvjr5v0dmfmni59a0m.apps.googleusercontent.com
+  - name: GOOGLE_CLIENT_SECRET
+    valueFrom:
+      secretKeyRef:
+        name: room-manager-secret
+        key: google-client-secret
+  - name: NEXTAUTH_SECRET
+    valueFrom:
+      secretKeyRef:
+        name: room-manager-secret
+        key: nextauth-secret
+  - name: NEXTAUTH_URL
+    value: https://room-manager.tiktuzki.com
 livenessProbe:
   httpGet:
     path: /api/health
@@ -28,3 +43,9 @@ readinessProbe:
   timeoutSeconds: 150
   successThreshold: 1
   failureThreshold: 3
+
+serviceAccount:
+  create: false
+  automount: true
+  annotations: { }
+  name: ""
