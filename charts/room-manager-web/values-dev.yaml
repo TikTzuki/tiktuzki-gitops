@@ -9,3 +9,22 @@ service:
   type: NodePort
   port: 80
   nodePort: 32004
+
+livenessProbe:
+  httpGet:
+    path: /api/health
+    port: 3000
+  initialDelaySeconds: 10
+  periodSeconds: 5
+  timeoutSeconds: 120
+  successThreshold: 1
+  failureThreshold: 3
+readinessProbe:
+  httpGet:
+    path: /api/health
+    port: 3000
+  initialDelaySeconds: 25
+  periodSeconds: 30
+  timeoutSeconds: 150
+  successThreshold: 1
+  failureThreshold: 3
