@@ -12,7 +12,6 @@ service:
 
 extraEnvVars:
   - name: DATABASE_URL
-    value: postgresql://postgres:postgres@postgres.postgres.svc.cluster.local:5432/meeting_room
     valueFrom:
       secretKeyRef:
         name: meeting-room-secret
