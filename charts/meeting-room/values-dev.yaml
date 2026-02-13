@@ -35,8 +35,8 @@ readinessProbe:
   httpGet:
     path: /api/health
     port: 3000
-  initialDelaySeconds: 25
-  periodSeconds: 30
+  initialDelaySeconds: 15
+  periodSeconds: 60
   timeoutSeconds: 150
   successThreshold: 1
   failureThreshold: 3
