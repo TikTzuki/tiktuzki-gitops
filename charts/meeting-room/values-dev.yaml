@@ -1,0 +1,49 @@
+replicaCount: 1
+
+image:
+  repository: tiktuzki/meeting-room
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+service:
+  type: NodePort
+  port: 3000
+  nodePort: 32006
+
+extraEnvVars:
+  - name: DATABASE_URL
+    value: postgresql://postgres:postgres@postgres.postgres.svc.cluster.local:5432/meeting_room
+    valueFrom:
+      secretKeyRef:
+        name: meeting-room-secret
+        key: database-url
+  - name: ADMIN_SECRET
+    valueFrom:
+      secretKeyRef:
+        name: meeting-room-secret
+        key: admin-secret
+
+livenessProbe:
+  httpGet:
+    path: /api/health
+    port: 3000
+  initialDelaySeconds: 10
+  periodSeconds: 5
+  timeoutSeconds: 120
+  successThreshold: 1
+  failureThreshold: 3
+readinessProbe:
+  httpGet:
+    path: /api/health
+    port: 3000
+  initialDelaySeconds: 25
+  periodSeconds: 30
+  timeoutSeconds: 150
+  successThreshold: 1
+  failureThreshold: 3
+
+serviceAccount:
+  create: false
+  automount: true
+  annotations: { }
+  name: ""

@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "{{ include "meeting-room.fullname" . }}-test-connection"
+  labels:
+    {{- include "meeting-room.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": test
+spec:
+  containers:
+    - name: wget
+      image: busybox
+      command: [ 'wget' ]
+      args: [ '{{ include "meeting-room.fullname" . }}:{{ .Values.service.port }}' ]
+  restartPolicy: Never

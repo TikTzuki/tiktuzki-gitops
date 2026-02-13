@@ -1,0 +1,6 @@
+apiVersion: v2
+name: meeting-room
+description: A Helm chart for meeting-room booking app
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
