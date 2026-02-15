@@ -26,7 +26,7 @@ extraEnvVars:
       secretKeyRef:
         name: meeting-room-secret
         key: telegram-bot-token
-  - name: NEXT_PUBLIC_TELEGRAM_BOT_USERNAME
+  - name: TELEGRAM_BOT_USERNAME
     value: genesis_hyper_bot
   - name: DISCORD_BOT_TOKEN
     valueFrom:
