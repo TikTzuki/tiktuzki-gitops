@@ -30,6 +30,17 @@ service:
   type: ClusterIP
   port: 3000
 
+extraEnvVars:
+  - name: DATABASE_URL
+  - name: ADMIN_SECRET
+  - name: TELEGRAM_BOT_TOKEN
+  - name: NEXT_PUBLIC_TELEGRAM_BOT_USERNAME
+    value: genesis_hyper_bot
+  - name: DISCORD_BOT_TOKEN
+  - name: DISCORD_APP_ID
+  - name: DISCORD_PUBLIC_KEY
+  - name: NEXT_PUBLIC_APP_URL
+
 ingress:
   enabled: false
   className: ""

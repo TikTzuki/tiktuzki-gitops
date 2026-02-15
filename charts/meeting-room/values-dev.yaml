@@ -21,6 +21,24 @@ extraEnvVars:
       secretKeyRef:
         name: meeting-room-secret
         key: admin-secret
+  - name: TELEGRAM_BOT_TOKEN
+    valueFrom:
+      secretKeyRef:
+        name: meeting-room-secret
+        key: telegram-bot-token
+  - name: NEXT_PUBLIC_TELEGRAM_BOT_USERNAME
+    value: genesis_hyper_bot
+  - name: DISCORD_BOT_TOKEN
+    valueFrom:
+      secretKeyRef:
+        name: meeting-room-secret
+        key: discord-bot-token
+  - name: DISCORD_APP_ID
+    value: "1075266036829540442"
+  - name: DISCORD_PUBLIC_KEY
+    value: 2e0ad62059a8530a7cbc3a74f3afcf127af9a883d7317e6ed1477fd5fab07396
+  - name: NEXT_PUBLIC_APP_URL
+    value: "https://meeting.tiktuzki.com"
 
 livenessProbe:
   httpGet:
