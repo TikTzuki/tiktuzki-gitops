@@ -35,10 +35,9 @@ spec:
       initContainers:
         - name: format
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
-          {{- with .Values.securityContext }}
           securityContext:
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
+            seccompProfile:
+              type: Unconfined
           command:
             - sh
             - -c
