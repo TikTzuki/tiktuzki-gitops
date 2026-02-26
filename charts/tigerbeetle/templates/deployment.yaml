@@ -36,8 +36,7 @@ spec:
         - name: format
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           securityContext:
-            seccompProfile:
-              type: Unconfined
+            privileged: true
           command:
             - sh
             - -c
