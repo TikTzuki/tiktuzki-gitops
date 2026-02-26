@@ -1,0 +1,29 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tigerbeetle
+  namespace: devops
+spec:
+  destination:
+    namespace: database
+    server: https://kubernetes.default.svc
+  project: default
+  source:
+    repoURL: git@github.com:TikTzuki/tiktuzki-gitops.git
+    targetRevision: main
+    path: charts/tigerbeetle
+    helm:
+      valueFiles:
+        - values-dev.yaml
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        maxDuration: 3m0s
+        factor: 2

@@ -1,0 +1,58 @@
+nameOverride: ""
+fullnameOverride: ""
+
+replicaCount: 1
+
+image:
+  repository: tiktuzki/tigerbeetle
+  pullPolicy: IfNotPresent
+  tag: "0.16.67"
+
+imagePullSecrets: [ ]
+
+tigerbeetle:
+  cluster: 0
+  replica: 0
+  replicaCount: 1
+  addresses: "0.0.0.0:3000"
+  dataFile: "/data/0.tigerbeetle"
+
+persistence:
+  enabled: true
+  accessModes:
+    - ReadWriteOnce
+  size: 10Gi
+  useLocalVolume: true
+  localPath: /mnt/data/tigerbeetle
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - node1
+
+service:
+  type: ClusterIP
+  port: 3000
+
+serviceAccount:
+  create: false
+  automount: true
+  annotations: { }
+  name: ""
+
+podAnnotations: { }
+podLabels: { }
+podSecurityContext: { }
+
+securityContext:
+  seccompProfile:
+    type: Unconfined
+
+resources: { }
+
+nodeSelector: { }
+tolerations: [ ]
+affinity: { }
