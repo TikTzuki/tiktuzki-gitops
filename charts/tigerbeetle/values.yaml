@@ -45,11 +45,11 @@ serviceAccount:
 
 podAnnotations: { }
 podLabels: { }
-podSecurityContext: { }
-
-securityContext:
+podSecurityContext:
   seccompProfile:
     type: Unconfined
+
+securityContext: { }
 
 resources: { }
 
