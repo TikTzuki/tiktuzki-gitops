@@ -42,8 +42,19 @@ spec:
             - sh
             - -c
             - |
+              echo "Checking for data file: {{ .Values.tigerbeetle.dataFile }}"
+              ls -la /data/ || true
+              echo "Binary location:"
+              ls -la /usr/local/bin/tigerbeetle || true
+              which tigerbeetle || true
+              echo "Current working directory: $(pwd)"
               if [ ! -f {{ .Values.tigerbeetle.dataFile }} ]; then
+                echo "Data file not found, running format..."
+                echo "Command: /usr/local/bin/tigerbeetle format --cluster={{ .Values.tigerbeetle.cluster }} --replica={{ .Values.tigerbeetle.replica }} --replica-count={{ .Values.tigerbeetle.replicaCount }} {{ .Values.tigerbeetle.dataFile }}"
                 /usr/local/bin/tigerbeetle format --cluster={{ .Values.tigerbeetle.cluster }} --replica={{ .Values.tigerbeetle.replica }} --replica-count={{ .Values.tigerbeetle.replicaCount }} {{ .Values.tigerbeetle.dataFile }}
+                echo "Format completed with exit code: $?"
+              else
+                echo "Data file already exists, skipping format"
               fi
           volumeMounts:
             - name: data
