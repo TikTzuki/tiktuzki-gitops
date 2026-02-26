@@ -43,7 +43,7 @@ spec:
             - -c
             - |
               if [ ! -f {{ .Values.tigerbeetle.dataFile }} ]; then
-                ./tigerbeetle format --cluster={{ .Values.tigerbeetle.cluster }} --replica={{ .Values.tigerbeetle.replica }} --replica-count={{ .Values.tigerbeetle.replicaCount }} {{ .Values.tigerbeetle.dataFile }}
+                /usr/local/bin/tigerbeetle format --cluster={{ .Values.tigerbeetle.cluster }} --replica={{ .Values.tigerbeetle.replica }} --replica-count={{ .Values.tigerbeetle.replicaCount }} {{ .Values.tigerbeetle.dataFile }}
               fi
           volumeMounts:
             - name: data
