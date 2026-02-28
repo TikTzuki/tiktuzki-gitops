@@ -27,12 +27,12 @@ spec:
 
   config:
     raw:
-      agents:
-        defaults:
-          model:
-            primary: {{ printf "ollama/%s" .Values.ollamaModel | quote }}
-            endpoint: {{ .Values.ollamaHost | quote }}
-          sandbox: {{ .Values.sandbox }}
+      agents: { }
+{{/*        defaults:*/}}
+{{/*          model:*/}}
+{{/*            primary: {{ printf "ollama/%s" .Values.ollamaModel | quote }}*/}}
+{{/*            endpoint: {{ .Values.ollamaHost | quote }}*/}}
+{{/*          sandbox: {{ .Values.sandbox }}*/}}
 
   resources:
     {{- toYaml .Values.resources | nindent 4 }}
