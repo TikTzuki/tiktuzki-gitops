@@ -13,6 +13,8 @@ service:
 extraEnvVars:
   - name: OLLAMA_GPU_OVERHEAD
     value: "512000000"    # reserve 512MB VRAM for system (RTX3060 has 12GB)
+  - name: PATH
+    value: "/usr/local/bin/node-host:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 imagePullSecrets: [ ]
 nameOverride: ""
@@ -71,8 +73,30 @@ persistence:
     path: /home/tik/data/ollama-models/
     reclaimPolicy: Retain
 
-volumes: [ ]
-volumeMounts: [ ]
+volumes:
+  - name: node-bin
+    hostPath:
+      path: /home/tik/.nvm/versions/node/v24.14.0/bin
+      type: Directory
+  - name: git-bin
+    hostPath:
+      path: /usr/bin/git
+      type: File
+  - name: git-core
+    hostPath:
+      path: /usr/lib/git-core
+      type: Directory
+
+volumeMounts:
+  - name: node-bin
+    mountPath: /usr/local/bin/node-host
+    readOnly: true
+  - name: git-bin
+    mountPath: /usr/local/bin/git
+    readOnly: true
+  - name: git-core
+    mountPath: /usr/lib/git-core
+    readOnly: true
 
 # Pin to node1 where the RTX 3060 is attached
 nodeSelector:
