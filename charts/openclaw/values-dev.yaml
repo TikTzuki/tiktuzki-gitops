@@ -68,3 +68,4 @@ service:
   canvasNodePort: 38793
   gatewayNodePort: 38789
   webTerminalPort: 37681
+  gatewayPort: ''

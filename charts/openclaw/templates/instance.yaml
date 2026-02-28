@@ -69,19 +69,23 @@ spec:
   networking:
     service:
       type: NodePort
-      ports:
-        - name: gateway
-          nodePort: {{ .Values.service.gatewayNodePort }}
-          port: {{ .Values.service.gatewayPort }}
-          protocol: TCP
-        - name: canvas
-          nodePort: {{ .Values.service.canvasNodePort }}
-          port: {{ .Values.service.canvasPort }}
-          protocol: TCP
-        - name: web-terminal
-          nodePort: {{ .Values.service.webTerminalPort }}
-          port: 7681
-          protocol: TCP
+      ports: { }
+{{/*        - name: gateway*/}}
+{{/*          nodePort: {{ .Values.service.gatewayNodePort }}*/}}
+{{/*          port: {{ .Values.service.gatewayPort }}*/}}
+{{/*          protocol: TCP*/}}
+{{/*        - name: canvas*/}}
+{{/*          nodePort: {{ .Values.service.canvasNodePort }}*/}}
+{{/*          port: {{ .Values.service.canvasPort }}*/}}
+{{/*          protocol: TCP*/}}
+{{/*        - name: web-terminal*/}}
+{{/*          nodePort: {{ .Values.service.webTerminalPort }}*/}}
+{{/*          port: 7681*/}}
+{{/*          protocol: TCP*/}}
+{{/*        - browser:*/}}
+{{/*          nodePort: {{ .Values.service.browserNodePort }}*/}}
+{{/*          port: 18791*/}}
+{{/*          protocol: TCP*/}}
   security:
     networkPolicy:
       enabled: true
