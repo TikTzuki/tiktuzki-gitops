@@ -32,7 +32,7 @@ spec:
           model:
             primary: {{ printf "ollama/%s" .Values.ollamaModel | quote }}
             endpoint: {{ .Values.ollamaHost | quote }}
-          sandbox: {{ .Values.sandbox | false }}
+            sandbox: {{ .Values.sandbox | false }}
 
   resources:
     {{- toYaml .Values.resources | nindent 4 }}
