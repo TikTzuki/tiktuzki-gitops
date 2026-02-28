@@ -6,12 +6,6 @@ image:
   tag: "latest"
   pullPolicy: Always
 
-# External Ollama — standalone deployment in ai-model namespace running qwen3:8b
-ollamaNamespace: ai-model
-ollamaHost: "http://ollama.ai-model.svc.cluster.local:11434"
-ollamaModel: "qwen3:8b"
-sandbox: "true"
-
 ollamaProvider:
   apiKey: "ollama-local"
   baseUrl: "http://ollama.ai-model.svc.cluster.local:11434"
@@ -19,7 +13,7 @@ ollamaProvider:
   models:
     - id: 'qwen3:8b'
       name: 'qwen3:8b'
-      contextWindow: 40960,
+      contextWindow: 40960
       maxTokens: 40960 * 10
 
 agents:
