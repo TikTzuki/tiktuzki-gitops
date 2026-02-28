@@ -14,7 +14,7 @@ extraEnvVars:
   - name: OLLAMA_GPU_OVERHEAD
     value: "512000000"    # reserve 512MB VRAM for system (RTX3060 has 12GB)
   - name: PATH
-    value: "/usr/local/bin/node-host:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    value: "/usr/local/node-host/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 imagePullSecrets: [ ]
 nameOverride: ""
@@ -76,7 +76,7 @@ persistence:
 volumes:
   - name: node-bin
     hostPath:
-      path: /home/tik/.nvm/versions/node/v24.14.0/bin
+      path: /home/tik/.nvm/versions/node/v24.14.0
       type: Directory
   - name: git-bin
     hostPath:
@@ -89,7 +89,7 @@ volumes:
 
 volumeMounts:
   - name: node-bin
-    mountPath: /usr/local/bin/node-host
+    mountPath: /usr/local/node-host
     readOnly: true
   - name: git-bin
     mountPath: /usr/local/bin/git
