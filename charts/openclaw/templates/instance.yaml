@@ -51,6 +51,19 @@ spec:
         - ReadWriteOnce
       {{- end }}
 
+  networking:
+    service:
+      type: NodePort
+      ports:
+        - name: gateway
+          port: {{ .Values.service.gatewayPort }}
+          targetPort: {{ .Values.service.gatewayPort }}
+          protocol: TCP
+        - name: canvas
+          port: {{ .Values.service.canvasPort }}
+          targetPort: {{ .Values.service.canvasPort }}
+          protocol: TCP
+
   security:
     networkPolicy:
       enabled: true
