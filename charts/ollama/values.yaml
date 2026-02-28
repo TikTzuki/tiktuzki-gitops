@@ -18,6 +18,8 @@ serviceAccount:
 podAnnotations: { }
 podLabels: { }
 
+runtimeClassName: ""   # set to "nvidia" to enable GPU
+
 podSecurityContext: { }
 
 securityContext: { }

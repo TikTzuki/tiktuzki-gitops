@@ -10,7 +10,9 @@ service:
   port: 11434
   nodePort: 31434
 
-extraEnvVars: [ ]
+extraEnvVars:
+  - name: OLLAMA_GPU_OVERHEAD
+    value: "512000000"    # reserve 512MB VRAM for system (RTX3060 has 12GB)
 
 imagePullSecrets: [ ]
 nameOverride: ""
@@ -25,16 +27,21 @@ serviceAccount:
 podAnnotations: { }
 podLabels: { }
 
-podSecurityContext: { }
+runtimeClassName: nvidia   # required for RTX 3060 GPU access
+
+podSecurityContext:
+  supplementalGroups: [ 44, 109 ]  # video/render groups for GPU access
 
 securityContext: { }
 
 resources:
   requests:
-    cpu: 500m
-    memory: 2Gi
+    cpu: "2"
+    memory: 4Gi
   limits:
-    memory: 8Gi
+    cpu: "4"
+    memory: 12Gi
+    nvidia.com/gpu: 1   # RTX 3060 — 12GB VRAM
 
 livenessProbe:
   httpGet:
@@ -64,6 +71,9 @@ persistence:
 volumes: [ ]
 volumeMounts: [ ]
 
-nodeSelector: { }
+# Pin to node1 where the RTX 3060 is attached
+nodeSelector:
+  kubernetes.io/hostname: node1
+
 tolerations: [ ]
 affinity: { }
