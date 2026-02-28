@@ -82,7 +82,6 @@ volumes:
 volumeMounts:
   - name: node-bin
     mountPath: /usr/local/node-host
-    readOnly: true
 
 # Pin to node1 where the RTX 3060 is attached
 nodeSelector:
