@@ -10,7 +10,7 @@ image:
 ollamaNamespace: ai-model
 ollamaHost: "http://ollama.ai-model.svc.cluster.local:11434"
 ollamaModel: "qwen3:8b"
-sandbox: false
+sandbox: 'false'
 
 extraEnvVars: [ ]
 
