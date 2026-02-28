@@ -16,6 +16,11 @@ ollamaProvider:
   apiKey: "ollama-local"
   baseUrl: "http://ollama.ai-model.svc.cluster.local:11434"
   api: "ollama"
+  models:
+    - id: 'qwen3:8b'
+      name: 'qwen3:8b'
+      contextWindow: 40960,
+      maxTokens: 40960 * 10
 
 agents:
   defaults:
