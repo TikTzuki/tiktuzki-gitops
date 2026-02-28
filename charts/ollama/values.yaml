@@ -20,6 +20,10 @@ podLabels: { }
 
 runtimeClassName: ""   # set to "nvidia" to enable GPU
 
+# Models to pull on startup. Leave empty to skip auto-pull.
+models: [ ]
+# - qwen3:8b
+
 podSecurityContext: { }
 
 securityContext: { }

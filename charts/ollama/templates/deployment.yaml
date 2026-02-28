@@ -41,6 +41,9 @@ spec:
           {{- end }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- if .Values.models }}
+          command: [ "/bin/sh", "/entrypoint/entrypoint.sh" ]
+          {{- end }}
           env:
             - name: OLLAMA_HOST
               value: "0.0.0.0"
@@ -70,6 +73,10 @@ spec:
             - name: data
               mountPath: /root/.ollama
             {{- end }}
+            {{- if .Values.models }}
+            - name: entrypoint
+              mountPath: /entrypoint
+            {{- end }}
             {{- with .Values.volumeMounts }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
@@ -78,6 +85,12 @@ spec:
         - name: data
           persistentVolumeClaim:
             claimName: {{ include "ollama.fullname" . }}-data
+        {{- end }}
+        {{- if .Values.models }}
+        - name: entrypoint
+          configMap:
+            name: {{ include "ollama.fullname" . }}-entrypoint
+            defaultMode: 0755
         {{- end }}
         {{- with .Values.volumes }}
         {{- toYaml . | nindent 8 }}

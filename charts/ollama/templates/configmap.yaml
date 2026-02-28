@@ -1,0 +1,32 @@
+{{- if .Values.models }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "ollama.fullname" . }}-entrypoint
+  labels:
+    {{- include "ollama.labels" . | nindent 4 }}
+data:
+  entrypoint.sh: |
+    #!/bin/sh
+    set -e
+
+    echo "[ollama] starting server..."
+    ollama serve &
+    OLLAMA_PID=$!
+
+    echo "[ollama] waiting for server to be ready..."
+    until ollama list > /dev/null 2>&1; do
+      sleep 2
+    done
+    echo "[ollama] server ready"
+
+    echo "[ollama] pulling models: {{ join " " .Values.models }}"
+    {{- range .Values.models }}
+    echo "[ollama] pulling {{ . }}..."
+    ollama pull {{ . }}
+    echo "[ollama] {{ . }} ready"
+    {{- end }}
+
+    echo "[ollama] all models pulled, serving..."
+    wait $OLLAMA_PID
+{{- end }}

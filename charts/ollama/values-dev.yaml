@@ -29,6 +29,9 @@ podLabels: { }
 
 runtimeClassName: nvidia   # required for RTX 3060 GPU access
 
+models:
+  - qwen3:8b
+
 podSecurityContext:
   supplementalGroups: [ 44, 109 ]  # video/render groups for GPU access
 
