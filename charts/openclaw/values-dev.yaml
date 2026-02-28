@@ -10,6 +10,7 @@ image:
 ollamaNamespace: ai-model
 ollamaHost: "http://ollama.ai-model.svc.cluster.local:11434"
 ollamaModel: "qwen3:8b"
+sandbox: "true"
 
 extraEnvVars:
   - name: OPENCLAW_DISABLE_BONJOUR
