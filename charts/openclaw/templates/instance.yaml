@@ -1,0 +1,73 @@
+apiVersion: openclaw.rocks/v1alpha1
+kind: OpenClawInstance
+metadata:
+  name: {{ include "openclaw.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  image:
+    repository: {{ .Values.image.repository }}
+    tag: {{ .Values.image.tag | quote }}
+    pullPolicy: {{ .Values.image.pullPolicy }}
+
+  # Point to the standalone Ollama in ai-model namespace — no sidecar needed
+  ollama:
+    enabled: false
+
+  env:
+    - name: OLLAMA_HOST
+      value: {{ .Values.ollamaHost | quote }}
+    {{- with .Values.extraEnvVars }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+
+  {{- with .Values.envFrom }}
+  envFrom:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+
+  config:
+    raw:
+      agents:
+        defaults:
+          model:
+            primary: {{ printf "ollama/%s" .Values.ollamaModel | quote }}
+            endpoint: {{ .Values.ollamaHost | quote }}
+          sandbox: {{ .Values.sandbox | false }}
+
+  resources:
+    {{- toYaml .Values.resources | nindent 4 }}
+
+  storage:
+    persistence:
+      enabled: {{ .Values.persistence.enabled }}
+      {{- if .Values.persistence.storageClass }}
+      storageClass: {{ .Values.persistence.storageClass | quote }}
+      {{- end }}
+      size: {{ .Values.persistence.size }}
+      accessModes:
+        - ReadWriteOnce
+
+  security:
+    networkPolicy:
+      enabled: true
+      allowDNS: true
+      # Allow HTTPS egress for external APIs
+      allowedEgressCIDRs:
+        - 0.0.0.0/0
+      # Allow port 11434 egress to Ollama in ai-model namespace
+      additionalEgress:
+        - ports:
+            - port: 11434
+              protocol: TCP
+          to:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: {{ .Values.ollamaNamespace | quote }}
+    rbac:
+      createServiceAccount: true
+
+  {{- with .Values.nodeSelector }}
+  availability:
+    nodeSelector:
+      {{- toYaml . | nindent 6 }}
+  {{- end }}

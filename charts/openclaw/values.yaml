@@ -1,0 +1,34 @@
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  repository: ghcr.io/openclaw/openclaw
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+# External Ollama service coordinates
+ollamaNamespace: ai-model
+ollamaHost: "http://ollama.ai-model.svc.cluster.local:11434"
+ollamaModel: "qwen3:8b"
+sandbox: false
+
+extraEnvVars: [ ]
+
+envFrom: [ ]
+# - secretRef:
+#     name: openclaw-api-keys
+
+resources:
+  requests:
+    cpu: "500m"
+    memory: "1Gi"
+  limits:
+    cpu: "2"
+    memory: "4Gi"
+
+persistence:
+  enabled: true
+  storageClass: ""
+  size: 10Gi
+
+nodeSelector: { }

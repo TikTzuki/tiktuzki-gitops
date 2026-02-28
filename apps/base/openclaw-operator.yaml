@@ -1,0 +1,21 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: openclaw-operator
+  namespace: devops
+spec:
+  destination:
+    namespace: openclaw-operator-system
+    server: https://kubernetes.default.svc
+  project: default
+  source:
+    repoURL: https://github.com/openclawrocks/k8s-operator
+    targetRevision: main
+    path: charts/openclaw-operator
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true   # required for CRD installation

@@ -1,0 +1,37 @@
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  repository: ghcr.io/openclaw/openclaw
+  tag: "latest"
+  pullPolicy: Always
+
+# External Ollama — standalone deployment in ai-model namespace running qwen3:8b
+ollamaNamespace: ai-model
+ollamaHost: "http://ollama.ai-model.svc.cluster.local:11434"
+ollamaModel: "qwen3:8b"
+
+extraEnvVars:
+  - name: OPENCLAW_DISABLE_BONJOUR
+    value: "1"
+
+envFrom: [ ]
+# Uncomment and create this secret for API key injection:
+# - secretRef:
+#     name: openclaw-api-keys
+
+resources:
+  requests:
+    cpu: "500m"
+    memory: "1Gi"
+  limits:
+    cpu: "2"
+    memory: "4Gi"
+
+persistence:
+  enabled: true
+  storageClass: ""
+  size: 10Gi
+
+nodeSelector:
+  kubernetes.io/hostname: node1
