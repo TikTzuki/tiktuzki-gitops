@@ -28,5 +28,7 @@ data:
     {{- end }}
 
     echo "[ollama] all models pulled, serving..."
+    apt update && apt install -y git
+    echo installed git
     wait $OLLAMA_PID
 {{- end }}
