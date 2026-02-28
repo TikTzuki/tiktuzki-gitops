@@ -9,7 +9,7 @@ spec:
     server: https://kubernetes.default.svc
   project: default
   source:
-    repoURL: https://github.com/openclawrocks/k8s-operator
+    repoURL: https://github.com/openclaw-rocks/k8s-operator
     targetRevision: main
     path: charts/openclaw-operator
   syncPolicy:
