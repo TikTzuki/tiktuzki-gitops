@@ -71,14 +71,17 @@ spec:
       type: NodePort
       ports:
         - name: gateway
+          nodePort: {{ .Values.service.gatewayNodePort }}
           port: {{ .Values.service.gatewayPort }}
-          targetPort: {{ .Values.service.gatewayPort }}
           protocol: TCP
         - name: canvas
+          nodePort: {{ .Values.service.canvasNodePort }}
           port: {{ .Values.service.canvasPort }}
-          targetPort: {{ .Values.service.canvasPort }}
           protocol: TCP
-
+        - name: web-terminal
+          nodePort: {{ .Values.service.webTerminalPort }}
+          port: 7681
+          protocol: TCP
   security:
     networkPolicy:
       enabled: true

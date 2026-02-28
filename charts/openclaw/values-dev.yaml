@@ -63,3 +63,8 @@ persistence:
 
 nodeSelector:
   kubernetes.io/hostname: node1
+
+service:
+  canvasNodePort: 38793
+  gatewayNodePort: 38789
+  webTerminalPort: 37681
