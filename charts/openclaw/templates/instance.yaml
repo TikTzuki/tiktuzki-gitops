@@ -51,6 +51,21 @@ spec:
         - ReadWriteOnce
       {{- end }}
 
+  {{- with .Values.webTerminal }}
+  webTerminal:
+    enabled: {{ .enabled }}
+    readOnly: {{ .readOnly }}
+    {{- with .resources }}
+    resources:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- if .credential }}
+    credential:
+      secretRef:
+        name: {{ .credential.secretRef.name }}
+    {{- end }}
+  {{- end }}
+
   networking:
     service:
       type: NodePort

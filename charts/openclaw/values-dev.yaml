@@ -30,6 +30,19 @@ envFrom: [ ]
 # - secretRef:
 #     name: openclaw-api-keys
 
+webTerminal:
+  enabled: true
+  readOnly: false
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "64Mi"
+    limits:
+      cpu: "200m"
+      memory: "128Mi"
+  credential:
+    secretRef:
+      name: openclaw-terminal-secret
 resources:
   requests:
     cpu: "500m"

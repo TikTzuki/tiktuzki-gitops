@@ -36,6 +36,14 @@ persistence:
     path: /home/tik/data/openclaw-data/
     reclaimPolicy: Retain
 
+webTerminal:
+  enabled: false
+  readOnly: false
+  resources: { }
+  # credential:
+  #   secretRef:
+  #     name: openclaw-webterminal-secret
+
 service:
   gatewayPort: 18789
   canvasPort: 18793
