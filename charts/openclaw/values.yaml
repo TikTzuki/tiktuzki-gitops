@@ -30,5 +30,10 @@ persistence:
   enabled: true
   storageClass: ""
   size: 10Gi
+  local:
+    enabled: false
+    node: node1
+    path: /home/tik/data/openclaw-data/
+    reclaimPolicy: Retain
 
 nodeSelector: { }

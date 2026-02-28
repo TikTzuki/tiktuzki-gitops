@@ -1,0 +1,25 @@
+{{- if and .Values.persistence.local.enabled }}
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: {{ include "openclaw.fullname" . }}-data-pv
+  labels:
+    {{- include "openclaw.labels" . | nindent 4 }}
+spec:
+  capacity:
+    storage: {{ .Values.persistence.size | default "10Gi" }}
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: {{ .Values.persistence.local.reclaimPolicy | default "Retain" }}
+  storageClassName: {{ .Values.persistence.storageClass | default "" | quote }}
+  local:
+    path: {{ .Values.persistence.local.path }}
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - {{ .Values.persistence.local.node }}
+{{- end }}

@@ -39,13 +39,17 @@ spec:
 
   storage:
     persistence:
-      enabled: {{ .Values.persistence.enabled }}
+      enabled: true
+      {{- if .Values.persistence.local.enabled }}
+      existingClaim: {{ include "openclaw.fullname" . }}-data
+      {{- else }}
       {{- if .Values.persistence.storageClass }}
       storageClass: {{ .Values.persistence.storageClass | quote }}
       {{- end }}
       size: {{ .Values.persistence.size }}
       accessModes:
         - ReadWriteOnce
+      {{- end }}
 
   security:
     networkPolicy:

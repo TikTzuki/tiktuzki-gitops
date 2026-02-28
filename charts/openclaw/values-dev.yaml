@@ -29,9 +29,14 @@ resources:
     memory: "4Gi"
 
 persistence:
-  enabled: false
+  enabled: true
   storageClass: ""
   size: 10Gi
+  local:
+    enabled: true
+    node: node1
+    path: /home/tik/data/openclaw-data/
+    reclaimPolicy: Retain
 
 nodeSelector:
   kubernetes.io/hostname: node1

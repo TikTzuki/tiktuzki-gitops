@@ -8,6 +8,17 @@ Expand the name of the chart.
 {{/*
 Create a default fully qualified app name.
 */}}
+{{- define "openclaw.chart" -}}
+{{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{- define "openclaw.labels" -}}
+helm.sh/chart: {{ include "openclaw.chart" . }}
+app.kubernetes.io/name: {{ include "openclaw.name" . }}
+app.kubernetes.io/instance: {{ .Release.Name }}
+app.kubernetes.io/managed-by: {{ .Release.Service }}
+{{- end }}
+
 {{- define "openclaw.fullname" -}}
 {{- if .Values.fullnameOverride }}
 {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
