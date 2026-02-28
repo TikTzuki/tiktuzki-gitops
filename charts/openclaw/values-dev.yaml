@@ -12,6 +12,16 @@ ollamaHost: "http://ollama.ai-model.svc.cluster.local:11434"
 ollamaModel: "qwen3:8b"
 sandbox: "true"
 
+ollamaProvider:
+  apiKey: "ollama-local"
+  baseUrl: "http://ollama.ai-model.svc.cluster.local:11434"
+  api: "ollama"
+
+agents:
+  defaults:
+    model:
+      primary: "ollama/qwen3:8b"
+
 extraEnvVars:
   - name: OPENCLAW_DISABLE_BONJOUR
     value: "1"

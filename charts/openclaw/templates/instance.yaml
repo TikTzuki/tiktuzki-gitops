@@ -27,7 +27,10 @@ spec:
 
   config:
     raw:
-      agents: { }
+      models:
+        providers:
+          ollama: {{ .Values.ollamaProvider }}}
+      agents: {{ .Values.agents }}
 {{/*        defaults:*/}}
 {{/*          model:*/}}
 {{/*            primary: {{ printf "ollama/%s" .Values.ollamaModel | quote }}*/}}
