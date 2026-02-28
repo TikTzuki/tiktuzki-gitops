@@ -1,0 +1,69 @@
+replicaCount: 1
+
+image:
+  repository: ollama/ollama
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+service:
+  type: NodePort
+  port: 11434
+  nodePort: 31434
+
+extraEnvVars: [ ]
+
+imagePullSecrets: [ ]
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  automount: true
+  annotations: { }
+  name: ""
+
+podAnnotations: { }
+podLabels: { }
+
+podSecurityContext: { }
+
+securityContext: { }
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 2Gi
+  limits:
+    memory: 8Gi
+
+livenessProbe:
+  httpGet:
+    path: /api/version
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 10
+
+readinessProbe:
+  httpGet:
+    path: /api/version
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 5
+
+persistence:
+  enabled: true
+  storageClass: ""
+  accessMode: ReadWriteOnce
+  size: 20Gi
+  local:
+    enabled: true
+    node: node1
+    path: /home/tik/data/ollama-models/
+    reclaimPolicy: Retain
+
+volumes: [ ]
+volumeMounts: [ ]
+
+nodeSelector: { }
+tolerations: [ ]
+affinity: { }
