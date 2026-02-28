@@ -13,8 +13,8 @@ ollamaProvider:
   models:
     - id: 'qwen3:8b'
       name: 'qwen3:8b'
-      contextWindow: 40960
-      maxTokens: 40960 * 10
+      contextWindow: 32768
+      maxTokens: 40960
 
 agents:
   defaults:
