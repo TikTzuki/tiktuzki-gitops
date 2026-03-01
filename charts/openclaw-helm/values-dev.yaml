@@ -1,3 +1,11 @@
+persistence:
+  size: 10Gi
+  local:
+    enabled: true
+    node: node1
+    path: /home/tik/data/openclaw-helm
+    reclaimPolicy: Retain
+
 app-template:
   openclawVersion: "latest"
 
@@ -64,8 +72,8 @@ app-template:
 
   persistence:
     data:
-      size: 10Gi
-      storageClass: local-path
+      existingClaim: openclaw-helm-data
 
-nodeSelector:
-  kubernetes.io/hostname: node1
+  defaultPodOptions:
+    nodeSelector:
+      kubernetes.io/hostname: node1
