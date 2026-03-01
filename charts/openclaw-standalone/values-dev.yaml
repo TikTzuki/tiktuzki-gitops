@@ -9,7 +9,7 @@ gatewayToken:
 ollama:
   api: "ollama"
   apiKey: "ollama-local"
-  baseUrl: "http://192.168.1.14:11434"
+  baseUrl: "http://192.168.1.7:11434"
   model: "qwen3:8b"
 
 sandbox:
