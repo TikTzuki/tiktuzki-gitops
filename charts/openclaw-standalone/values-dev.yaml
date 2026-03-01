@@ -1,0 +1,45 @@
+image:
+  repository: ghcr.io/openclaw/openclaw
+  tag: "latest"
+  pullPolicy: Always
+
+gatewayToken:
+  generate: true
+
+ollama:
+  api: "ollama"
+  apiKey: "ollama-local"
+  baseUrl: "http://192.168.1.14:11434"
+  model: "qwen3:8b"
+
+sandbox:
+  mode: "non-main"
+  scope: "session"
+  workspaceAccess: "rw"
+
+extraEnvVars:
+  - name: OPENCLAW_DISABLE_BONJOUR
+    value: "1"
+
+resources:
+  requests:
+    cpu: "500m"
+    memory: "1Gi"
+  limits:
+    cpu: "2"
+    memory: "4Gi"
+
+persistence:
+  size: 10Gi
+  local:
+    enabled: true
+    node: node1
+    path: /home/tik/data/openclaw-standalone/
+    reclaimPolicy: Retain
+
+service:
+  gatewayNodePort: 38789
+  canvasNodePort: 38793
+
+nodeSelector:
+  kubernetes.io/hostname: node1

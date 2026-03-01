@@ -1,0 +1,49 @@
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  repository: ghcr.io/openclaw/openclaw
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+# Gateway token — auto-generated on first install if generate: true
+gatewayToken:
+  generate: true
+  value: ""   # set this to use a fixed token (requires generate: false)
+
+# External Ollama
+ollama:
+  api: "ollama"
+  apiKey: "ollama-local"
+  baseUrl: "http://ollama.ai-model.svc.cluster.local:11434"
+  model: "qwen3:8b"
+
+# Sandbox config (mirrors docker-compose sandbox defaults)
+sandbox:
+  mode: "non-main"
+  scope: "session"
+  workspaceAccess: "rw"
+
+extraEnvVars: [ ]
+
+resources:
+  requests:
+    cpu: "500m"
+    memory: "1Gi"
+  limits:
+    cpu: "2"
+    memory: "4Gi"
+
+persistence:
+  size: 10Gi
+  local:
+    enabled: false
+    node: node1
+    path: /home/tik/data/openclaw-standalone/
+    reclaimPolicy: Retain
+
+service:
+  gatewayNodePort: 38789
+  canvasNodePort: 38793
+
+nodeSelector: { }
