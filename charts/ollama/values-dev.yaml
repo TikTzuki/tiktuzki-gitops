@@ -12,6 +12,10 @@ service:
 extraEnvVars:
   - name: OLLAMA_GPU_OVERHEAD
     value: "512000000"    # reserve 512MB VRAM for system (RTX3060 has 12GB)
+  - name: OLLAMA_KEEP_ALIVE
+    value: "-1"           # keep models loaded in VRAM indefinitely (prevents 100s+ cold start)
+  - name: OLLAMA_FLASH_ATTENTION
+    value: "1"            # enable flash attention for faster inference on RTX3060
   - name: PATH
     value: "/usr/local/node-host/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
