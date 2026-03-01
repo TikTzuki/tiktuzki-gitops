@@ -38,8 +38,8 @@ persistence:
     reclaimPolicy: Retain
 
 service:
-  gatewayNodePort: 38789
-  canvasNodePort: 38793
+  gatewayNodePort: 31789   # valid range: 30000-32767
+  canvasNodePort: 31793
 
 nodeSelector:
   kubernetes.io/hostname: node1
