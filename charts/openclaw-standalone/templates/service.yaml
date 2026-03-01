@@ -19,3 +19,8 @@ spec:
       targetPort: 18793
       protocol: TCP
       nodePort: {{ .Values.service.canvasNodePort }}
+    - name: bash
+      port: 7681
+      targetPort: 7681
+      protocol: TCP
+      nodePort: {{ .Values.service.bashNodePort }}

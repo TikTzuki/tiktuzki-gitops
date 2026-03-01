@@ -25,35 +25,44 @@ spec:
         fsGroup: 1000
         runAsNonRoot: true
 
-      # mirrors: docker compose run --rm openclaw-cli onboard
+      # mirrors docker-setup.sh: seed dirs + config + token
       initContainers:
-        - name: onboard
+        - name: setup
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command:
             - /bin/sh
             - -c
             - |
-              CONFIG_DIR=/home/node/.openclaw
-              CONFIG_FILE=$CONFIG_DIR/openclaw.json
+              set -e
+              CONFIG=/home/node/.openclaw/openclaw.json
 
-              # skip onboarding if already done
-              if [ -f "$CONFIG_FILE" ]; then
-                echo "[onboard] config exists, skipping"
+              # skip if already seeded
+              if [ -f "$CONFIG" ]; then
+                echo "[setup] config exists, skipping"
                 exit 0
               fi
 
-              echo "[onboard] running openclaw-cli onboard..."
-              node dist/index.js onboard --non-interactive
-              echo "[onboard] done"
+              mkdir -p /home/node/.openclaw/identity
+              mkdir -p /home/node/.openclaw/workspace
+
+              TOKEN="${OPENCLAW_GATEWAY_TOKEN}"
+              cat > "$CONFIG" <<CONF
+              {
+                "gateway": {
+                  "mode": "local",
+                  "auth": { "mode": "token", "token": "$TOKEN" },
+                  "bind": "lan"
+                }
+              }
+              CONF
+              echo "[setup] seeded config with gateway.mode=local"
           env:
             - name: OPENCLAW_GATEWAY_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: {{ include "openclaw-standalone.fullname" . }}-token
                   key: token
-            - name: OLLAMA_HOST
-              value: {{ .Values.ollama.baseUrl | quote }}
           volumeMounts:
             - name: data
               mountPath: /home/node/.openclaw
@@ -62,14 +71,17 @@ spec:
         - name: gateway
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          # mirrors: docker compose up openclaw-gateway
-          command: [ "node", "dist/index.js", "gateway" ]
+          # --allow-unconfigured lets the gateway start before models/agents are fully configured
+          # so the user can complete onboarding via the web UI
+          command: [ "node", "dist/index.js", "gateway", "--allow-unconfigured" ]
           env:
             - name: OPENCLAW_GATEWAY_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: {{ include "openclaw-standalone.fullname" . }}-token
                   key: token
+            - name: OPENCLAW_GATEWAY_BIND
+              value: "lan"
             - name: OLLAMA_HOST
               value: {{ .Values.ollama.baseUrl | quote }}
             {{- with .Values.extraEnvVars }}
@@ -89,9 +101,20 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /home/node/.openclaw
-            - name: config
-              mountPath: /home/node/.openclaw/openclaw.json
-              subPath: openclaw.json
+
+        - name: bash
+          image: tsl0922/ttyd:latest
+          command: [ "ttyd", "--writable", "-p", "7681", "bash" ]
+          ports:
+            - name: bash
+              containerPort: 7681
+              protocol: TCP
+          securityContext:
+            runAsUser: 0
+            runAsNonRoot: false
+          volumeMounts:
+            - name: data
+              mountPath: /home/node/.openclaw
 
       volumes:
         - name: data
@@ -101,6 +124,3 @@ spec:
           {{- else }}
           emptyDir: { }
           {{- end }}
-        - name: config
-          configMap:
-            name: {{ include "openclaw-standalone.fullname" . }}-config
