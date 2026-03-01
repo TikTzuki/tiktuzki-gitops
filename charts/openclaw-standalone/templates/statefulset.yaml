@@ -82,16 +82,8 @@ spec:
             - name: canvas
               containerPort: 18793
               protocol: TCP
-          livenessProbe:
-            exec:
-              command: [ "node", "dist/index.js", "health", "--token", "$(OPENCLAW_GATEWAY_TOKEN)" ]
-            initialDelaySeconds: 30
-            periodSeconds: 15
-          readinessProbe:
-            exec:
-              command: [ "node", "dist/index.js", "health", "--token", "$(OPENCLAW_GATEWAY_TOKEN)" ]
-            initialDelaySeconds: 10
-            periodSeconds: 5
+          livenessProbe: { }
+          readinessProbe: { }
           {{- with .Values.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
