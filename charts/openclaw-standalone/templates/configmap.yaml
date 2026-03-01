@@ -12,7 +12,15 @@ data:
           "ollama": {
             "api": {{ .Values.ollama.api | quote }},
             "apiKey": {{ .Values.ollama.apiKey | quote }},
-            "baseUrl": {{ .Values.ollama.baseUrl | quote }}
+            "baseUrl": {{ .Values.ollama.baseUrl | quote }},
+            "models": [
+              {
+                "contextWindow": 32768,
+                "id": "qwen3:8b",
+                "maxTokens": 40960,
+                "name": "qwen3:8b"
+              }
+            ]
           }
         }
       },
