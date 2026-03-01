@@ -90,6 +90,10 @@ spec:
       type: NodePort
       ports:
         - name: gateway
+          port: 18791
+          protocol: TCP
+          targetPort: 18791
+        - name: gateway
           port: {{ .Values.service.gatewayPort }}
           nodePort: {{ .Values.service.gatewayNodePort }}
           targetPort: {{ .Values.service.gatewayPort }}
