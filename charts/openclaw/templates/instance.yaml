@@ -69,7 +69,7 @@ spec:
   networking:
     service:
       type: NodePort
-      ports: { }
+      ports:
         - name: gateway
           port: {{ .Values.service.gatewayPort }}
           nodePort: {{ .Values.service.gatewayNodePort }}
