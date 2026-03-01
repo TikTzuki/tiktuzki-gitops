@@ -33,6 +33,7 @@ app-template:
             "gateway": {
               "port": 18789,
               "mode": "local",
+              "trustedProxies": ["192.168.1.14"],
               "controlUi": {
                 "dangerouslyAllowHostHeaderOriginFallback": true
               }
