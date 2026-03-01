@@ -6,9 +6,8 @@ image:
   tag: "latest"
 
 service:
-  type: NodePort
+  type: ClusterIP
   port: 11434
-  nodePort: 31434
 
 extraEnvVars:
   - name: OLLAMA_GPU_OVERHEAD
