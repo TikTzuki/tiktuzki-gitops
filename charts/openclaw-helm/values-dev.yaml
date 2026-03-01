@@ -17,6 +17,9 @@ app-template:
             pullPolicy: Always
           env:
             OLLAMA_HOST: "http://192.168.1.7:11434"
+          securityContext:
+            readOnlyRootFilesystem: false
+            allowPrivilegeEscalation: true
           resources:
             requests:
               cpu: "500m"
