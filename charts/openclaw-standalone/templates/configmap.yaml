@@ -31,5 +31,12 @@ data:
           },
           "sandbox": {{ .Values.sandbox | toJson }}
         }
+      },
+      "gateway": {
+        "auth": {
+          "mode": "token",
+          "token": "7904dd481aababe41bbd24f53caa398a4517abe03d04bced247da91f44b82e49"
+        },
+        "bind": "loopback"
       }
     }

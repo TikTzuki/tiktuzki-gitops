@@ -83,15 +83,13 @@ spec:
               containerPort: 18793
               protocol: TCP
           livenessProbe:
-            httpGet:
-              path: /healthz
-              port: 18789
+            exec:
+              command: [ "node", "dist/index.js", "health", "--token", "$(OPENCLAW_GATEWAY_TOKEN)" ]
             initialDelaySeconds: 30
             periodSeconds: 15
           readinessProbe:
-            httpGet:
-              path: /healthz
-              port: 18789
+            exec:
+              command: [ "node", "dist/index.js", "health", "--token", "$(OPENCLAW_GATEWAY_TOKEN)" ]
             initialDelaySeconds: 10
             periodSeconds: 5
           {{- with .Values.resources }}
