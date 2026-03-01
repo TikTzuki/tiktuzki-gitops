@@ -113,6 +113,9 @@ spec:
     networkPolicy:
       enabled: true
       allowDNS: true
+      # Allow ingress from external (NodePort traffic source is node IP after SNAT)
+      allowedIngressCIDRs:
+        {{- toYaml .Values.networkPolicy.allowedIngressCIDRs | nindent 8 }}
       # Allow HTTPS egress for external APIs
       allowedEgressCIDRs:
         - 0.0.0.0/0
