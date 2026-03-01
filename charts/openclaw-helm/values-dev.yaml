@@ -72,7 +72,7 @@ app-template:
 
   persistence:
     data:
-      existingClaim: openclaw-helm-data
+      enabled: true
 
   defaultPodOptions:
     nodeSelector:
