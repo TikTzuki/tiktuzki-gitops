@@ -1,0 +1,71 @@
+app-template:
+  openclawVersion: "latest"
+
+  controllers:
+    main:
+      containers:
+        main:
+          image:
+            pullPolicy: Always
+          env:
+            OLLAMA_HOST: "http://192.168.1.7:11434"
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "2"
+              memory: "4Gi"
+
+  configMaps:
+    config:
+      data:
+        openclaw.json: |
+          {
+            "gateway": {
+              "port": 18789,
+              "mode": "local"
+            },
+            "models": {
+              "providers": {
+                "ollama": {
+                  "api": "ollama",
+                  "apiKey": "ollama-local",
+                  "baseUrl": "http://192.168.1.7:11434",
+                  "models": [
+                    {
+                      "contextWindow": 32768,
+                      "id": "qwen3:8b",
+                      "maxTokens": 40960,
+                      "name": "qwen3:8b"
+                    }
+                  ]
+                }
+              }
+            },
+            "agents": {
+              "defaults": {
+                "workspace": "/home/node/.openclaw/workspace",
+                "model": {
+                  "primary": "ollama/qwen3:8b"
+                },
+                "userTimezone": "UTC"
+              }
+            }
+          }
+
+  service:
+    main:
+      type: NodePort
+      ports:
+        http:
+          port: 18789
+          nodePort: 31789
+
+  persistence:
+    data:
+      size: 10Gi
+      storageClass: local-path
+
+nodeSelector:
+  kubernetes.io/hostname: node1
