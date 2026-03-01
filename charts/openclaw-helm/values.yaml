@@ -328,90 +328,90 @@ app-template:
           # @schema type:boolean;default:true
           # -- Enable/disable the Chromium browser sidecar
           enabled: true
-          image:
-            # @schema type:string;default:chromedp/headless-shell
-            # -- Chromium image repository
-            repository: chromedp/headless-shell
-            # @schema type:string
-            # -- Chromium image tag
-            tag: "{{ .Values.chromiumVersion }}"
-          env:
-            # Fontconfig cache needs a writable directory
-            XDG_CACHE_HOME: /tmp
-          securityContext:
-            runAsUser: 1000
-            runAsGroup: 1000
-            runAsNonRoot: true
-            readOnlyRootFilesystem: true
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-                - ALL
-          resources:
-            requests:
-              # @schema type:string;default:100m
-              cpu: 100m
-              # @schema type:string;default:256Mi
-              memory: 256Mi
-            limits:
-              # @schema type:string;default:1000m
-              cpu: 1000m
-              # @schema type:string;default:1Gi
-              memory: 1Gi
-          probes:
-            liveness:
-              # @schema type:boolean;default:true
-              enabled: true
-              # @schema type:boolean;default:true
-              custom: true
-              spec:
-                httpGet:
-                  # @schema type:string;default:/json/version
-                  path: /json/version
-                  # @schema type:integer;default:9222
-                  port: 9222
-                # @schema type:integer;default:10
-                initialDelaySeconds: 10
-                # @schema type:integer;default:30
-                periodSeconds: 30
-                # @schema type:integer;default:5
-                timeoutSeconds: 5
-                # @schema type:integer;default:6
-                failureThreshold: 6
-            readiness:
-              # @schema type:boolean;default:true
-              enabled: true
-              # @schema type:boolean;default:true
-              custom: true
-              spec:
-                httpGet:
-                  # @schema type:string;default:/json/version
-                  path: /json/version
-                  # @schema type:integer;default:9222
-                  port: 9222
-                # @schema type:integer;default:5
-                initialDelaySeconds: 5
-                # @schema type:integer;default:10
-                periodSeconds: 10
-            startup:
-              # @schema type:boolean;default:true
-              enabled: true
-              # @schema type:boolean;default:true
-              custom: true
-              spec:
-                httpGet:
-                  # @schema type:string;default:/json/version
-                  path: /json/version
-                  # @schema type:integer;default:9222
-                  port: 9222
-                # @schema type:integer;default:5
-                initialDelaySeconds: 5
-                # @schema type:integer;default:5
-                periodSeconds: 5
-                # @schema type:integer;default:5
-                timeoutSeconds: 5
-                # @schema type:integer;default:12
-                failureThreshold: 12
+  #          image:
+  #            # @schema type:string;default:chromedp/headless-shell
+  #            # -- Chromium image repository
+  #            repository: chromedp/headless-shell
+  #            # @schema type:string
+  #            # -- Chromium image tag
+  #            tag: "{{ .Values.chromiumVersion }}"
+  #          env:
+  #            # Fontconfig cache needs a writable directory
+  #            XDG_CACHE_HOME: /tmp
+  #          securityContext:
+  #            runAsUser: 1000
+  #            runAsGroup: 1000
+  #            runAsNonRoot: true
+  #            readOnlyRootFilesystem: true
+  #            allowPrivilegeEscalation: false
+  #            capabilities:
+  #              drop:
+  #                - ALL
+  #          resources:
+  #            requests:
+  #              # @schema type:string;default:100m
+  #              cpu: 100m
+  #              # @schema type:string;default:256Mi
+  #              memory: 256Mi
+  #            limits:
+  #              # @schema type:string;default:1000m
+  #              cpu: 1000m
+  #              # @schema type:string;default:1Gi
+  #              memory: 1Gi
+  #          probes:
+  #            liveness:
+  #              # @schema type:boolean;default:true
+  #              enabled: true
+  #              # @schema type:boolean;default:true
+  #              custom: true
+  #              spec:
+  #                httpGet:
+  #                  # @schema type:string;default:/json/version
+  #                  path: /json/version
+  #                  # @schema type:integer;default:9222
+  #                  port: 9222
+  #                # @schema type:integer;default:10
+  #                initialDelaySeconds: 10
+  #                # @schema type:integer;default:30
+  #                periodSeconds: 30
+  #                # @schema type:integer;default:5
+  #                timeoutSeconds: 5
+  #                # @schema type:integer;default:6
+  #                failureThreshold: 6
+  #            readiness:
+  #              # @schema type:boolean;default:true
+  #              enabled: true
+  #              # @schema type:boolean;default:true
+  #              custom: true
+  #              spec:
+  #                httpGet:
+  #                  # @schema type:string;default:/json/version
+  #                  path: /json/version
+  #                  # @schema type:integer;default:9222
+  #                  port: 9222
+  #                # @schema type:integer;default:5
+  #                initialDelaySeconds: 5
+  #                # @schema type:integer;default:10
+  #                periodSeconds: 10
+  #            startup:
+  #              # @schema type:boolean;default:true
+  #              enabled: true
+  #              # @schema type:boolean;default:true
+  #              custom: true
+  #              spec:
+  #                httpGet:
+  #                  # @schema type:string;default:/json/version
+  #                  path: /json/version
+  #                  # @schema type:integer;default:9222
+  #                  port: 9222
+  #                # @schema type:integer;default:5
+  #                initialDelaySeconds: 5
+  #                # @schema type:integer;default:5
+  #                periodSeconds: 5
+  #                # @schema type:integer;default:5
+  #                timeoutSeconds: 5
+  #                # @schema type:integer;default:12
+  #                failureThreshold: 12
 
   configMaps:
     config:
