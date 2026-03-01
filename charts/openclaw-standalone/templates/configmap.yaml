@@ -31,5 +31,8 @@ data:
           },
           "sandbox": {{ .Values.sandbox | toJson }}
         }
+      },
+      "gateway": {
+        "mode": "local"
       }
     }
