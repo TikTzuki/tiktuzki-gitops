@@ -15,6 +15,9 @@ app-template:
         main:
           image:
             pullPolicy: Always
+          envFrom:
+            - secretRef:
+                name: openclaw-helm-env
           env:
             OLLAMA_HOST: "http://192.168.1.7:11434"
           securityContext:
@@ -66,6 +69,12 @@ app-template:
                 },
                 "userTimezone": "UTC"
               }
+            },
+            "channels": {
+              "telegram": {
+                "botToken": "${TELEGRAM_BOT_TOKEN}",
+                "enabled": true
+              }
             }
           }
 
@@ -84,3 +93,4 @@ app-template:
   defaultPodOptions:
     nodeSelector:
       kubernetes.io/hostname: node1
+
