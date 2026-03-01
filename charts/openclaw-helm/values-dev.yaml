@@ -55,10 +55,7 @@ app-template:
                       "contextWindow": 32768,
                       "id": "qwen3:8b",
                       "maxTokens": 40960,
-                      "name": "qwen3:8b",
-                      "options": {
-                        "think": false
-                      }
+                      "name": "qwen3:8b"
                     }
                   ]
                 }
