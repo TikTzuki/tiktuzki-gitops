@@ -65,7 +65,7 @@ nodeSelector:
   kubernetes.io/hostname: node1
 
 service:
-  canvasNodePort: 38793
   gatewayNodePort: 38789
-  webTerminalPort: 37681
-  gatewayPort: ''
+  canvasNodePort: 38793
+  webTerminalNodePort: 37681
+  browserNodePort: 38791

@@ -47,5 +47,7 @@ webTerminal:
 service:
   gatewayPort: 18789
   canvasPort: 18793
+  webTerminalPort: 7681
+  browserPort: 18791
 
 nodeSelector: { }
