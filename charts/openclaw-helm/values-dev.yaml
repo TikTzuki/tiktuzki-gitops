@@ -67,7 +67,7 @@ app-template:
                 "model": {
                   "primary": "ollama/qwen3:8b"
                 },
-                "userTimezone": "UTC",
+                "userTimezone": "Asia/Ho_Chi_Minh",
                 "compaction": {
                   "mode": "safeguard"
                 } 
@@ -77,8 +77,11 @@ app-template:
               "telegram": {
                 "enabled": true,
                 "botToken": "${TELEGRAM_BOT_TOKEN}",
-                "configWrites": true,
-                "dmPolicy": "pairing",
+                "configWrites": false,
+                "dmPolicy": "allowlist",
+                "allowFrom": [
+                  1534702316
+                ],
                 "groups": {},
                 "groupAllowFrom": [],
                 "groupPolicy": "open",
@@ -86,7 +89,7 @@ app-template:
                 "actions": {
                   "sendMessage": true,
                   "sticker": true
-                } 
+                }
               }
             }
           }
