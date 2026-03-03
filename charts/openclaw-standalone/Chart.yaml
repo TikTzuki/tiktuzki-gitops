@@ -1,8 +1,0 @@
-apiVersion: v2
-name: openclaw-standalone
-description: OpenClaw on Kubernetes without the operator — mirrors the Docker Compose setup
-
-type: application
-
-version: 0.1.0
-appVersion: "latest"
