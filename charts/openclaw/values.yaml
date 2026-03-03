@@ -226,15 +226,16 @@ app-template:
             # @schema type:string;enum:[Always, IfNotPresent, Never];default:IfNotPresent
             # -- Image pull policy
             pullPolicy: IfNotPresent
-            command:
-              - node
-              - openclaw.mjs
-            args:
-              - gateway
-              - --bind
-              - lan
-              - --port
-              - "18789"
+          command:
+            - node
+            - openclaw.mjs
+          args:
+            - gateway
+            - --bind
+            - lan
+            - --port
+            - "18789"
+            - --allow-unconfigured
           # Reference a secret containing environment variables (e.g., API keys)
           # Create this secret manually or via external-secrets/vault-operator
           envFrom: [ ]
