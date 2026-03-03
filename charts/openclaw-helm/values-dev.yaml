@@ -15,7 +15,7 @@ app-template:
         main:
           image:
             repository: tiktuzki/openclaw
-            tag: "latest"
+            tag: "slim"
             pullPolicy: Always
           envFrom:
             - secretRef:
