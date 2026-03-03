@@ -15,14 +15,15 @@ app-template:
         main:
           image:
             repository: tiktuzki/openclaw
-            tag: "slim"
+            tag: slim
             pullPolicy: Always
           envFrom:
             - secretRef:
                 name: openclaw-helm-env
           env:
             OLLAMA_HOST: "http://ollama.ai-model.svc.cluster.local:11434"
-          securityContext: { }
+          securityContext:
+            readOnlyRootFilesystem: false
           resources:
             requests:
               cpu: "500m"

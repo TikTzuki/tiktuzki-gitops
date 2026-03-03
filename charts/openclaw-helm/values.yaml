@@ -222,19 +222,19 @@ app-template:
             repository: ghcr.io/openclaw/openclaw
             # @schema type:string
             # -- Container image tag
-            tag: "{{ .Values.openclawVersion }}"
+            tag: latest
             # @schema type:string;enum:[Always, IfNotPresent, Never];default:IfNotPresent
             # -- Image pull policy
             pullPolicy: IfNotPresent
-          command:
-            - node
-            - dist/index.js
-          args:
-            - gateway
-            - --bind
-            - lan
-            - --port
-            - "18789"
+          #          command:
+          #            - node
+          #            - dist/index.js
+          #          args:
+          #            - gateway
+          #            - --bind
+          #            - lan
+          #            - --port
+          #            - "18789"
           # Reference a secret containing environment variables (e.g., API keys)
           # Create this secret manually or via external-secrets/vault-operator
           envFrom: []
