@@ -6,7 +6,7 @@ persistence:
   local:
     enabled: false
     node: node1
-    path: /home/tik/data/openclaw-helm
+    path: /home/tik/data/openclaw
     reclaimPolicy: Retain
 
 # OpenClaw Helm Chart Values
@@ -237,11 +237,11 @@ app-template:
           #            - "18789"
           # Reference a secret containing environment variables (e.g., API keys)
           # Create this secret manually or via external-secrets/vault-operator
-          envFrom: []
+          envFrom: [ ]
           # Example:
           # - secretRef:
           #     name: openclaw-env-secret
-          env: {}
+          env: { }
           # Example: Add runtime dependency paths for skills and extra runtimes
           # env:
           #   PATH: /home/node/.openclaw/pnpm:/home/node/.openclaw/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin

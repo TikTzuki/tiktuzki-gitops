@@ -3,7 +3,7 @@ persistence:
   local:
     enabled: true
     node: node1
-    path: /home/tik/data/openclaw-helm
+    path: /home/tik/data/openclaw
     reclaimPolicy: Retain
 
 app-template:
@@ -19,7 +19,7 @@ app-template:
             pullPolicy: Always
           envFrom:
             - secretRef:
-                name: openclaw-helm-env
+                name: openclaw-env
           env:
             OLLAMA_HOST: "http://ollama.ai-model.svc.cluster.local:11434"
           securityContext:

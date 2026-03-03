@@ -1,17 +1,17 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: openclaw-helm
+  name: openclaw
   namespace: devops
 spec:
   destination:
-    namespace: openclaw-helm
+    namespace: openclaw
     server: https://kubernetes.default.svc
   project: default
   source:
     repoURL: git@github.com:TikTzuki/tiktuzki-gitops.git
     targetRevision: main
-    path: charts/openclaw-helm
+    path: charts/openclaw
     helm:
       valueFiles:
         - values-dev.yaml

@@ -1,5 +1,5 @@
 apiVersion: v2
-name: openclaw-helm
+name: openclaw
 description: Helm chart for deploying OpenClaw on Kubernetes — an AI assistant that connects to messaging platforms and executes tasks autonomously.
 type: application
 version: 1.4.0
