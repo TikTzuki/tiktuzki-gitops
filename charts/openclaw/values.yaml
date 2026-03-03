@@ -235,7 +235,7 @@ app-template:
               - lan
               - --port
               - "18789"
-              - -allow-unconfigured
+              - --allow-unconfigured
           # Reference a secret containing environment variables (e.g., API keys)
           # Create this secret manually or via external-secrets/vault-operator
           envFrom: [ ]
