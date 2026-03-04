@@ -23,9 +23,6 @@ app-template:
   # @schema type:string
   # -- Chromium sidecar image version
   chromiumVersion: "146.0.7680.31"
-  # @schema type:string;enum:[merge, overwrite];default:merge
-  # -- Config mode: `merge` preserves runtime changes, `overwrite` for strict GitOps
-  configMode: merge
 
   defaultPodOptions:
     # -- Pod security context
@@ -63,13 +60,17 @@ app-template:
 
               log "Starting config initialization"
               mkdir -p /home/node/.openclaw
-              CONFIG_MODE="${CONFIG_MODE:-merge}"
 
-              if [ "$CONFIG_MODE" = "merge" ] && [ -f /home/node/.openclaw/openclaw.json ]; then
-                log "Mode: merge - merging Helm config with existing config"
-                if node -e "
+              HELM_CONFIG="/config/openclaw.json"
+              EXISTING_CONFIG="/home/node/.openclaw/openclaw.json"
+
+              if [ ! -f "$EXISTING_CONFIG" ]; then
+                log "Fresh install - writing initial config"
+                cp "$HELM_CONFIG" "$EXISTING_CONFIG"
+              else
+                log "Existing config found, comparing meta.version"
+                node -e "
                   const fs = require('fs');
-                  // Strip JSON5 single-line comments while preserving // inside strings (e.g. URLs)
                   const stripComments = (s) => {
                     let r = '', q = false, i = 0;
                     while (i < s.length) {
@@ -85,44 +86,25 @@ app-template:
                     }
                     return r;
                   };
-                  let existing;
                   try {
-                    existing = JSON.parse(stripComments(fs.readFileSync('/home/node/.openclaw/openclaw.json', 'utf8')));
+                    const existing = JSON.parse(stripComments(fs.readFileSync('$EXISTING_CONFIG', 'utf8')));
+                    const helm = JSON.parse(stripComments(fs.readFileSync('$HELM_CONFIG', 'utf8')));
+                    const ev = (existing.meta && existing.meta.version) || 0;
+                    const hv = (helm.meta && helm.meta.version) || 0;
+                    console.log('[init-config] Existing version: ' + ev + ', Helm version: ' + hv);
+                    if (hv > ev) {
+                      console.log('[init-config] Helm config is newer, overwriting');
+                      fs.copyFileSync('$HELM_CONFIG', '$EXISTING_CONFIG');
+                    } else {
+                      console.log('[init-config] Existing config is current, keeping it');
+                    }
                   } catch (e) {
-                    console.error('[init-config] Warning: existing config is not valid JSON, will overwrite');
+                    console.error('[init-config] Error: ' + e.message + ', falling back to Helm config');
                     process.exit(1);
                   }
-                  const helm = JSON.parse(stripComments(fs.readFileSync('/config/openclaw.json', 'utf8')));
-                  const deepMerge = (target, source) => {
-                    for (const key of Object.keys(source)) {
-                      if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key])) {
-                        target[key] = target[key] || {};
-                        deepMerge(target[key], source[key]);
-                      } else {
-                        target[key] = source[key];
-                      }
-                    }
-                    return target;
-                  };
-                  const merged = deepMerge(existing, helm);
-                  fs.writeFileSync('/home/node/.openclaw/openclaw.json', JSON.stringify(merged, null, 2));
-                "; then
-                  log "Config merged successfully"
-                else
-                  log "WARNING: Merge failed (existing config may not be valid JSON), falling back to overwrite"
-                  cp /config/openclaw.json /home/node/.openclaw/openclaw.json
-                fi
-              else
-                if [ ! -f /home/node/.openclaw/openclaw.json ]; then
-                  log "Fresh install - writing initial config"
-                else
-                  log "Mode: overwrite - replacing config with Helm values"
-                fi
-                cp /config/openclaw.json /home/node/.openclaw/openclaw.json
+                " || cp "$HELM_CONFIG" "$EXISTING_CONFIG"
               fi
               log "Config initialization complete"
-          env:
-            CONFIG_MODE: "{{ .Values.configMode | default \"merge\" }}"
           securityContext:
             runAsUser: 1000
             runAsGroup: 1000
@@ -189,7 +171,7 @@ app-template:
               # Add skill slugs to the list below to install them declaratively.
               mkdir -p /home/node/.openclaw/workspace/skills
               cd /home/node/.openclaw/workspace
-              for skill in weather; do
+              for skill in gitlab-manager github find-skills self-improving-agent; do
                 if [ -n "$skill" ] && [ ! -d "skills/${skill##*/}" ]; then
                   log "Installing skill: $skill"
                   if ! npx -y clawhub install "$skill" --no-input; then
