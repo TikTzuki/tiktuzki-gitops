@@ -171,7 +171,7 @@ app-template:
               # Add skill slugs to the list below to install them declaratively.
               mkdir -p /home/node/.openclaw/workspace/skills
               cd /home/node/.openclaw/workspace
-              for skill in odoo-erp-connector gitlab-manager github find-skills self-improving-agent; do
+              for skill in gitlab-manager github find-skills self-improving-agent; do
                 if [ -n "$skill" ] && [ ! -d "skills/${skill##*/}" ]; then
                   log "Installing skill: $skill"
                   if ! npx -y clawhub install "$skill" --no-input; then
@@ -181,6 +181,31 @@ app-template:
                   log "Skill already installed: $skill"
                 fi
               done
+
+              # ============================================================
+              # Manual Skill Installation
+              # ============================================================
+              # Install skills manually from git repositories
+              # These skills are not available on ClawHub and need to be cloned directly
+              SKILLS_DIR="/home/node/.openclaw/workspace/skills"
+
+              # Install openclaw-odoo-skill from GitHub
+              if [ ! -d "$SKILLS_DIR/odoo-connector" ]; then
+                log "Installing manual skill: openclaw-odoo-skill"
+                cd /tmp
+                if git clone https://github.com/nullnaveen/openclaw-odoo-skill.git openclaw-odoo-skill; then
+                  # Copy the skill to the OpenClaw skills directory
+                  # The target directory name should match what OpenClaw expects
+                  cp -r openclaw-odoo-skill "$SKILLS_DIR/odoo-connector"
+                  log "Successfully installed openclaw-odoo-skill to $SKILLS_DIR/odoo-connector"
+                  rm -rf openclaw-odoo-skill
+                else
+                  log "WARNING: Failed to clone openclaw-odoo-skill from GitHub"
+                fi
+              else
+                log "Manual skill already installed: odoo-connector"
+              fi
+
               log "Skills initialization complete"
           env:
             HOME: /tmp
