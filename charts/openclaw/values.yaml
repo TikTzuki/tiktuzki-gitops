@@ -171,7 +171,7 @@ app-template:
               # Add skill slugs to the list below to install them declaratively.
               mkdir -p /home/node/.openclaw/workspace/skills
               cd /home/node/.openclaw/workspace
-              for skill in gitlab-manager github find-skills self-improving-agent; do
+              for skill in gitlab-manager github self-improving-agent; do
                 if [ -n "$skill" ] && [ ! -d "skills/${skill##*/}" ]; then
                   log "Installing skill: $skill"
                   if ! npx -y clawhub install "$skill" --no-input; then
