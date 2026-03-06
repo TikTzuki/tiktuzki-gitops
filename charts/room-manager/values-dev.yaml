@@ -2,7 +2,7 @@ replicaCount: 1
 
 image:
   repository: tiktuzki/room-manager
-  pullPolicy: IfNotPresent
+  pullPolicy: Always
   tag: "latest"
 
 config:
