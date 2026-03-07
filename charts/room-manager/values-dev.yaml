@@ -3,7 +3,7 @@ replicaCount: 1
 image:
   repository: tiktuzki/room-manager
   pullPolicy: Always
-  tag: "latest"
+  tag: "v2"
 
 config:
   applicationYaml: |
