@@ -59,6 +59,8 @@ config:
           springframework:
             web: info
           postgresql: debug
+          flywaydb: debug
+          flyway: debug
         io:
           r2dbc:
             postgresql: info
