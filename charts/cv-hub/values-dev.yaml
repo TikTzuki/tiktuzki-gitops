@@ -8,7 +8,7 @@ image:
 service:
   type: NodePort
   port: 80
-  nodePort: 32002
+  nodePort: 32006
 
 env:
   - name: DATABASE_URL
