@@ -43,9 +43,21 @@ envFrom: [ ]
 
 # Persistent volume for uploads
 persistence:
-  accessMode: ReadWriteOnce
+  enabled: true
+  storageClass: ""
+  accessModes:
+    - ReadWriteOnce
   size: 5Gi
-  # storageClass: ""
+  useLocalVolume: true
+  localPath: /mnt/data/cv-hub/uploads
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - node1
 
 ingress:
   enabled: false

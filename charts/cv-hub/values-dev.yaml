@@ -21,5 +21,17 @@ envFrom:
   - secretRef:
       name: cv-hub-env
 persistence:
-  accessMode: ReadWriteOnce
+  enabled: true
+  accessModes:
+    - ReadWriteOnce
   size: 5Gi
+  useLocalVolume: true
+  localPath: /home/tik/data/cv-hub/uploads
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - node1
