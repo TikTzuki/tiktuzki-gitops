@@ -2,14 +2,14 @@ apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: cv-hub
-  namespace: argocd
+  namespace: devops
 spec:
   destination:
     name: ''
     namespace: demo
     server: 'https://kubernetes.default.svc'
   source:
-    repoURL: 'git@github.com:TikTzuki/tiktuzki-charts.git'
+    repoURL: git@github.com:TikTzuki/tiktuzki-gitops.git
     targetRevision: main
     path: charts/cv-hub
     helm:
