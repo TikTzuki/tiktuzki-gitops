@@ -1,0 +1,25 @@
+replicaCount: 1
+
+image:
+  repository: tiktuzki/cv-hub
+  pullPolicy: Always
+  tag: "latest"
+
+service:
+  type: NodePort
+  port: 80
+  nodePort: 32002
+
+env:
+  - name: DATABASE_URL
+    value: "postgresql+psycopg://postgres:postgres@postgres:5432/cv_hub"
+  - name: ANTHROPIC_API_KEY
+    value: ""
+  - name: UPLOAD_DIR
+    value: /app/backend/uploads
+envFrom:
+  - secretRef:
+      name: cv-hub-env
+persistence:
+  accessMode: ReadWriteOnce
+  size: 5Gi

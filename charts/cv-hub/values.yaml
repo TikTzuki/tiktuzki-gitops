@@ -1,0 +1,96 @@
+replicaCount: 1
+
+image:
+  repository: tiktuzki/cv-hub
+  pullPolicy: Always
+  tag: "latest"
+
+imagePullSecrets: [ ]
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  automount: true
+  annotations: { }
+  name: ""
+
+podAnnotations: { }
+podLabels: { }
+
+podSecurityContext: { }
+
+securityContext: { }
+
+service:
+  type: NodePort
+  port: 80
+  nodePort: 32002
+
+# Environment variables injected directly into the container
+env:
+  - name: UPLOAD_DIR
+    value: /app/backend/uploads
+
+# Reference secrets containing environment variables (e.g., DATABASE_URL, ANTHROPIC_API_KEY)
+# Create this secret manually:
+#   kubectl create secret generic cv-hub-env \
+#     --from-literal=DATABASE_URL='postgresql+psycopg://postgres:postgres@postgres:5432/cv_hub' \
+#     --from-literal=ANTHROPIC_API_KEY='sk-...'
+envFrom: [ ]
+# - secretRef:
+#     name: cv-hub-env
+
+# Persistent volume for uploads
+persistence:
+  accessMode: ReadWriteOnce
+  size: 5Gi
+  # storageClass: ""
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: { }
+  hosts:
+    - host: chart-example.local
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+  tls: [ ]
+
+httpRoute:
+  enabled: false
+  annotations: { }
+  parentRefs:
+    - name: gateway
+      sectionName: http
+  hostnames:
+    - chart-example.local
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+
+resources: { }
+
+livenessProbe:
+  httpGet:
+    path: /
+    port: http
+readinessProbe:
+  httpGet:
+    path: /
+    port: http
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 100
+  targetCPUUtilizationPercentage: 80
+
+volumes: [ ]
+volumeMounts: [ ]
+nodeSelector: { }
+tolerations: [ ]
+affinity: { }
