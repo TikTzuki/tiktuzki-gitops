@@ -11,10 +11,6 @@ service:
   nodePort: 32006
 
 env:
-  - name: DATABASE_URL
-    value: "postgresql+psycopg://postgres:postgres@postgres:5432/cv_hub"
-  - name: ANTHROPIC_API_KEY
-    value: ""
   - name: UPLOAD_DIR
     value: /app/backend/uploads
 envFrom:
