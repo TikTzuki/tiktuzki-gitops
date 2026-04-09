@@ -1,0 +1,98 @@
+replicaCount: 1
+
+image:
+  repository: tiktuzki/my-pwd
+  pullPolicy: Always
+  tag: "latest"
+
+imagePullSecrets: [ ]
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  automount: true
+  annotations: { }
+  name: ""
+
+podAnnotations: { }
+podLabels: { }
+
+podSecurityContext: { }
+
+securityContext: { }
+
+service:
+  type: NodePort
+  port: 3000
+  nodePort: 32003
+
+# Environment variables
+env:
+  - name: STATIC_DIR
+    value: /app/static
+  - name: PORT
+    value: "3000"
+
+# Secret reference for sensitive env vars (NOTION_TOKEN, GOOGLE_CLIENT_ID, etc.)
+# Create secret:
+#   kubectl create secret generic my-pwd-env \
+#     --from-literal=NOTION_TOKEN='ntn_...' \
+#     --from-literal=NOTION_PASSWORDS_DB_ID='...' \
+#     --from-literal=NOTION_USERS_DB_ID='...' \
+#     --from-literal=NOTION_GROUPS_DB_ID='...' \
+#     --from-literal=GOOGLE_CLIENT_ID='...' \
+#     --from-literal=GOOGLE_CLIENT_SECRET='...' \
+#     --from-literal=APP_URL='http://localhost:3000' \
+#     --from-literal=SESSION_SECRET='...'
+envFrom: [ ]
+# - secretRef:
+#     name: my-pwd-env
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: { }
+  hosts:
+    - host: chart-example.local
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+  tls: [ ]
+
+httpRoute:
+  enabled: false
+  annotations: { }
+  parentRefs:
+    - name: gateway
+      sectionName: http
+  hostnames:
+    - chart-example.local
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+
+resources: { }
+
+livenessProbe:
+  httpGet:
+    path: /
+    port: http
+readinessProbe:
+  httpGet:
+    path: /
+    port: http
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 100
+  targetCPUUtilizationPercentage: 80
+
+volumes: [ ]
+volumeMounts: [ ]
+nodeSelector: { }
+tolerations: [ ]
+affinity: { }
