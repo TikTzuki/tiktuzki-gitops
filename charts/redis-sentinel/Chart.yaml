@@ -1,0 +1,14 @@
+apiVersion: v2
+name: redis-sentinel
+description: Redis high-availability cluster (replication + Sentinel) for Kubernetes
+
+# A StatefulSet of N pods; each pod runs a redis-server and a redis-sentinel container.
+# A headless service gives every pod a stable DNS name, which Sentinel uses to monitor and
+# announce the master/replicas/peers — so the topology survives pod restarts (unlike pod IPs).
+type: application
+
+# Bump on every chart change.
+version: 1.0.0
+
+# Redis version shipped (matches image.tag).
+appVersion: "7.2"

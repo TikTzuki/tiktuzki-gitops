@@ -1,0 +1,146 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "redis-sentinel.fullname" . }}-scripts
+  labels:
+    {{- include "redis-sentinel.labels" . | nindent 4 }}
+data:
+  # ── redis bootstrap ────────────────────────────────────────────────────────────────
+  # Decide this node's role, write redis.conf, then exec redis-server.
+  #   * Ask every peer Sentinel who the master is; if found, replicate from it.
+  #   * Else scan peer Redis nodes for one already reporting role:master.
+  #   * Else fall back to ordinal-0 as the initial master (cold-start bootstrap).
+  # Each node announces its STABLE headless DNS name (not its pod IP), so the topology
+  # survives restarts.
+  start-redis.sh: |
+    #!/bin/sh
+    set -eu
+
+    SVC="{{ include "redis-sentinel.fullname" . }}"
+    HEADLESS="{{ include "redis-sentinel.headlessServiceName" . }}"
+    NS="{{ .Release.Namespace }}"
+    REPLICAS={{ .Values.replicaCount }}
+    MASTER_GROUP="{{ .Values.redis.masterGroupName }}"
+    REDIS_PORT={{ .Values.redis.port }}
+    SENTINEL_PORT={{ .Values.sentinel.port }}
+    MYHOST="${HOSTNAME}.${HEADLESS}.${NS}.svc.cluster.local"
+
+    rcli() {
+      if [ -n "${REDIS_PASSWORD:-}" ]; then
+        redis-cli -a "${REDIS_PASSWORD}" --no-auth-warning "$@"
+      else
+        redis-cli "$@"
+      fi
+    }
+
+    discover_master() {
+      i=0
+      while [ "$i" -lt "$REPLICAS" ]; do
+        h="${SVC}-${i}.${HEADLESS}.${NS}.svc.cluster.local"
+        a=$(rcli -h "$h" -p "$SENTINEL_PORT" sentinel get-master-addr-by-name "$MASTER_GROUP" 2>/dev/null | head -n1 || true)
+        [ -n "$a" ] && { echo "$a"; return 0; }
+        i=$((i+1))
+      done
+      i=0
+      while [ "$i" -lt "$REPLICAS" ]; do
+        h="${SVC}-${i}.${HEADLESS}.${NS}.svc.cluster.local"
+        r=$(rcli -h "$h" -p "$REDIS_PORT" info replication 2>/dev/null | tr -d '\r' | awk -F: '/^role:/{print $2}' || true)
+        [ "$r" = "master" ] && { echo "$h"; return 0; }
+        i=$((i+1))
+      done
+      return 1
+    }
+
+    MASTER="$(discover_master || true)"
+    [ -z "$MASTER" ] && MASTER="${SVC}-0.${HEADLESS}.${NS}.svc.cluster.local"
+    echo "redis bootstrap: me=${MYHOST} master=${MASTER}"
+
+    {
+      echo "port ${REDIS_PORT}"
+      echo "dir /data"
+      echo "replica-announce-ip ${MYHOST}"
+      echo "replica-announce-port ${REDIS_PORT}"
+    {{- range (.Values.redis.extraConfig | default "" | trim | splitList "\n") }}
+      echo {{ . | quote }}
+    {{- end }}
+    } > /tmp/redis.conf
+
+    if [ "$MASTER" != "$MYHOST" ]; then
+      echo "replicaof ${MASTER} ${REDIS_PORT}" >> /tmp/redis.conf
+    fi
+    if [ -n "${REDIS_PASSWORD:-}" ]; then
+      echo "requirepass ${REDIS_PASSWORD}" >> /tmp/redis.conf
+      echo "masterauth ${REDIS_PASSWORD}" >> /tmp/redis.conf
+    fi
+
+    exec redis-server /tmp/redis.conf
+
+  # ── sentinel bootstrap ─────────────────────────────────────────────────────────────
+  # Find the master (same discovery as redis, default ordinal-0), write sentinel.conf
+  # monitoring it by its stable DNS name, then exec redis-sentinel. Sentinels auto-discover
+  # each other through the master's pub/sub once they all monitor the same group.
+  start-sentinel.sh: |
+    #!/bin/sh
+    set -eu
+
+    SVC="{{ include "redis-sentinel.fullname" . }}"
+    HEADLESS="{{ include "redis-sentinel.headlessServiceName" . }}"
+    NS="{{ .Release.Namespace }}"
+    REPLICAS={{ .Values.replicaCount }}
+    MASTER_GROUP="{{ .Values.redis.masterGroupName }}"
+    REDIS_PORT={{ .Values.redis.port }}
+    SENTINEL_PORT={{ .Values.sentinel.port }}
+    QUORUM={{ .Values.sentinel.quorum }}
+    DOWN_AFTER={{ .Values.sentinel.downAfterMilliseconds }}
+    FAILOVER_TIMEOUT={{ .Values.sentinel.failoverTimeout }}
+    PARALLEL_SYNCS={{ .Values.sentinel.parallelSyncs }}
+    MYHOST="${HOSTNAME}.${HEADLESS}.${NS}.svc.cluster.local"
+
+    rcli() {
+      if [ -n "${REDIS_PASSWORD:-}" ]; then
+        redis-cli -a "${REDIS_PASSWORD}" --no-auth-warning "$@"
+      else
+        redis-cli "$@"
+      fi
+    }
+
+    discover_master() {
+      i=0
+      while [ "$i" -lt "$REPLICAS" ]; do
+        h="${SVC}-${i}.${HEADLESS}.${NS}.svc.cluster.local"
+        a=$(rcli -h "$h" -p "$SENTINEL_PORT" sentinel get-master-addr-by-name "$MASTER_GROUP" 2>/dev/null | head -n1 || true)
+        [ -n "$a" ] && { echo "$a"; return 0; }
+        i=$((i+1))
+      done
+      i=0
+      while [ "$i" -lt "$REPLICAS" ]; do
+        h="${SVC}-${i}.${HEADLESS}.${NS}.svc.cluster.local"
+        r=$(rcli -h "$h" -p "$REDIS_PORT" info replication 2>/dev/null | tr -d '\r' | awk -F: '/^role:/{print $2}' || true)
+        [ "$r" = "master" ] && { echo "$h"; return 0; }
+        i=$((i+1))
+      done
+      return 1
+    }
+
+    MASTER="$(discover_master || true)"
+    [ -z "$MASTER" ] && MASTER="${SVC}-0.${HEADLESS}.${NS}.svc.cluster.local"
+    echo "sentinel bootstrap: me=${MYHOST} monitoring master=${MASTER}"
+
+    {
+      echo "port ${SENTINEL_PORT}"
+      echo "dir /tmp"
+      echo "sentinel resolve-hostnames yes"
+      echo "sentinel announce-hostnames yes"
+      echo "sentinel announce-ip ${MYHOST}"
+      echo "sentinel announce-port ${SENTINEL_PORT}"
+      echo "sentinel monitor ${MASTER_GROUP} ${MASTER} ${REDIS_PORT} ${QUORUM}"
+      echo "sentinel down-after-milliseconds ${MASTER_GROUP} ${DOWN_AFTER}"
+      echo "sentinel failover-timeout ${MASTER_GROUP} ${FAILOVER_TIMEOUT}"
+      echo "sentinel parallel-syncs ${MASTER_GROUP} ${PARALLEL_SYNCS}"
+    } > /tmp/sentinel.conf
+    if [ -n "${REDIS_PASSWORD:-}" ]; then
+      echo "requirepass ${REDIS_PASSWORD}" >> /tmp/sentinel.conf
+      echo "sentinel auth-pass ${MASTER_GROUP} ${REDIS_PASSWORD}" >> /tmp/sentinel.conf
+    fi
+
+    exec redis-server /tmp/sentinel.conf --sentinel

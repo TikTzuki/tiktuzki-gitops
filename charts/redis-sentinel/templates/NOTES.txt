@@ -1,0 +1,31 @@
+Redis Sentinel HA cluster "{{ include "redis-sentinel.fullname" . }}" deployed to namespace {{ .Release.Namespace }}.
+
+Topology: {{ .Values.replicaCount }} pods, each running redis ({{ .Values.redis.port }}) + sentinel ({{ .Values.sentinel.port }}).
+Master group : {{ .Values.redis.masterGroupName }}
+Quorum       : {{ .Values.sentinel.quorum }}
+
+Per-pod stable DNS (use these as the Sentinel node list in your client):
+{{- $full := include "redis-sentinel.fullname" . }}
+{{- $headless := include "redis-sentinel.headlessServiceName" . }}
+{{- range $i := until (int .Values.replicaCount) }}
+  {{ $full }}-{{ $i }}.{{ $headless }}.{{ $.Release.Namespace }}.svc.cluster.local:{{ $.Values.sentinel.port }}
+{{- end }}
+
+Spring (Lettuce / Redisson) example:
+  spring.data.redis.sentinel.master = {{ .Values.redis.masterGroupName }}
+  spring.data.redis.sentinel.nodes  =
+{{- $lines := list }}
+{{- range $i := until (int .Values.replicaCount) }}
+{{- $lines = append $lines (printf "%s-%d.%s.%s.svc.cluster.local:%d" $full $i $headless $.Release.Namespace (int $.Values.sentinel.port)) }}
+{{- end }}
+    {{ join "," $lines }}
+
+Check health:
+  kubectl -n {{ .Release.Namespace }} get pods -l app.kubernetes.io/instance={{ .Release.Name }}
+  kubectl -n {{ .Release.Namespace }} exec -it {{ include "redis-sentinel.fullname" . }}-0 -c sentinel -- \
+    redis-cli -p {{ .Values.sentinel.port }} sentinel master {{ .Values.redis.masterGroupName }}
+  kubectl -n {{ .Release.Namespace }} exec -it {{ include "redis-sentinel.fullname" . }}-0 -c sentinel -- \
+    redis-cli -p {{ .Values.sentinel.port }} sentinel get-master-addr-by-name {{ .Values.redis.masterGroupName }}
+
+Test failover (delete the current master pod and watch a replica get promoted):
+  kubectl -n {{ .Release.Namespace }} delete pod <current-master-pod>

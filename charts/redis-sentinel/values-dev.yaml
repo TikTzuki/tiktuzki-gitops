@@ -1,0 +1,35 @@
+# Development values for redis-sentinel (single-node homelab).
+
+replicaCount: 3
+
+redis:
+  masterGroupName: mymaster
+  # No auth in dev. To enable, create a secret and set:
+  #   existingSecret: database-secret
+  #   existingSecretPasswordKey: redis-password
+  resources:
+    limits:
+      cpu: "1"
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+sentinel:
+  quorum: 2
+  downAfterMilliseconds: 5000
+  resources:
+    limits:
+      cpu: 250m
+      memory: 128Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+# Ephemeral by default — fine for a test/HA-parity cluster. Flip on + set a storageClass
+# (and pre-provision 3 local PVs if using a manual/local class) for durable data.
+persistence:
+  enabled: false
+
+service:
+  type: ClusterIP

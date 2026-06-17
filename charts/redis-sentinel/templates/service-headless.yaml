@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "redis-sentinel.headlessServiceName" . }}
+  labels:
+    {{- include "redis-sentinel.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  clusterIP: None
+  # Pods must resolve each other's DNS during bootstrap (before they pass readiness),
+  # so expose not-ready addresses too.
+  publishNotReadyAddresses: true
+  ports:
+    - name: redis
+      port: {{ .Values.redis.port }}
+      targetPort: redis
+      protocol: TCP
+    - name: sentinel
+      port: {{ .Values.sentinel.port }}
+      targetPort: sentinel
+      protocol: TCP
+  selector:
+    {{- include "redis-sentinel.selectorLabels" . | nindent 4 }}

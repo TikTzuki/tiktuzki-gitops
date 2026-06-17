@@ -1,0 +1,95 @@
+# Default values for redis-sentinel.
+
+# Chart name overrides
+nameOverride: ""
+fullnameOverride: ""
+
+# Number of pods. Each pod runs both a redis-server and a redis-sentinel.
+# Use an odd number >= 3 so Sentinel can form a quorum (set sentinel.quorum accordingly).
+replicaCount: 3
+
+# Container image (used for both the redis and sentinel containers)
+image:
+  repository: redis
+  tag: "7.2-alpine"
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: [ ]
+
+redis:
+  port: 6379
+  # Sentinel master group name — clients must use the same name.
+  masterGroupName: mymaster
+  # Optional AUTH. Leave empty for no password (homelab default).
+  # If existingSecret is set it wins; otherwise `password` is used inline.
+  password: ""
+  existingSecret: ""
+  existingSecretPasswordKey: redis-password
+  # Extra redis.conf lines appended verbatim to every node. Default = ephemeral
+  # (no RDB/AOF). Turn on persistence below AND switch these to e.g. `appendonly yes`
+  # for durable data.
+  extraConfig: |
+    save ""
+    appendonly no
+  resources: { }
+
+sentinel:
+  port: 26379
+  # Votes required to agree the master is down before failover. Must be <= replicaCount.
+  quorum: 2
+  downAfterMilliseconds: 5000
+  failoverTimeout: 60000
+  parallelSyncs: 1
+  resources: { }
+
+# Per-pod data volume.
+#   enabled: false -> emptyDir (ephemeral; simplest, works on a single node with no PVs)
+#   enabled: true  -> volumeClaimTemplates (needs a working StorageClass, or pre-provisioned
+#                     local PVs — one per replica — when storageClass is a manual/local class)
+persistence:
+  enabled: false
+  storageClass: ""
+  accessModes:
+    - ReadWriteOnce
+  size: 8Gi
+
+# Client-facing service. In-cluster apps should point their Sentinel node list at the
+# per-pod headless DNS names (see NOTES); this ClusterIP service is a convenience for
+# reaching "any" sentinel/redis.
+service:
+  type: ClusterIP
+  redisPort: 6379
+  sentinelPort: 26379
+  # Only used when type: NodePort
+  redisNodePort: ""
+  sentinelNodePort: ""
+
+# Service account
+serviceAccount:
+  create: true
+  automount: true
+  annotations: { }
+  name: ""
+
+# Pod configuration
+podAnnotations: { }
+podLabels: { }
+podSecurityContext: { }
+securityContext: { }
+
+# Resources (fallback if redis.resources / sentinel.resources are unset)
+resources: { }
+
+# Scheduling
+nodeSelector: { }
+tolerations: [ ]
+# Default: spread pods across nodes when possible (soft — won't block a single-node cluster).
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          topologyKey: kubernetes.io/hostname
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: redis-sentinel
