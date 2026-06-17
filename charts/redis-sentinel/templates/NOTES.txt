@@ -4,27 +4,33 @@ Topology: {{ .Values.replicaCount }} pods, each running redis ({{ .Values.redis.
 Master group : {{ .Values.redis.masterGroupName }}
 Quorum       : {{ .Values.sentinel.quorum }}
 
-Per-pod stable DNS (use these as the Sentinel node list in your client):
 {{- $full := include "redis-sentinel.fullname" . }}
 {{- $headless := include "redis-sentinel.headlessServiceName" . }}
+
+IN-CLUSTER clients — Sentinel node list (per-pod headless DNS):
 {{- range $i := until (int .Values.replicaCount) }}
   {{ $full }}-{{ $i }}.{{ $headless }}.{{ $.Release.Namespace }}.svc.cluster.local:{{ $.Values.sentinel.port }}
 {{- end }}
 
-Spring (Lettuce / Redisson) example:
-  spring.data.redis.sentinel.master = {{ .Values.redis.masterGroupName }}
-  spring.data.redis.sentinel.nodes  =
-{{- $lines := list }}
+{{- if .Values.external.enabled }}
+
+EXTERNAL clients (apps on your host) — Sentinel node list via NodePort
+  IP   = {{ .Values.external.announceIp | default "<node-ip>  (each pod uses its own node's hostIP)" }}
+  Find it with: kubectl get nodes -o wide
 {{- range $i := until (int .Values.replicaCount) }}
-{{- $lines = append $lines (printf "%s-%d.%s.%s.svc.cluster.local:%d" $full $i $headless $.Release.Namespace (int $.Values.sentinel.port)) }}
+  <node-ip>:{{ add (int $.Values.external.sentinelNodePortBase) $i }}   (sentinel of pod {{ $i }}; redis NodePort {{ add (int $.Values.external.redisNodePortBase) $i }})
 {{- end }}
-    {{ join "," $lines }}
+
+  Spring (Lettuce/Redisson):
+    spring.data.redis.sentinel.master = {{ .Values.redis.masterGroupName }}
+    spring.data.redis.sentinel.nodes  = <node-ip>:{{ .Values.external.sentinelNodePortBase }},<node-ip>:{{ add (int .Values.external.sentinelNodePortBase) 1 }},<node-ip>:{{ add (int .Values.external.sentinelNodePortBase) 2 }}
+{{- end }}
 
 Check health:
   kubectl -n {{ .Release.Namespace }} get pods -l app.kubernetes.io/instance={{ .Release.Name }}
-  kubectl -n {{ .Release.Namespace }} exec -it {{ include "redis-sentinel.fullname" . }}-0 -c sentinel -- \
+  kubectl -n {{ .Release.Namespace }} exec -it {{ $full }}-0 -c sentinel -- \
     redis-cli -p {{ .Values.sentinel.port }} sentinel master {{ .Values.redis.masterGroupName }}
-  kubectl -n {{ .Release.Namespace }} exec -it {{ include "redis-sentinel.fullname" . }}-0 -c sentinel -- \
+  kubectl -n {{ .Release.Namespace }} exec -it {{ $full }}-0 -c sentinel -- \
     redis-cli -p {{ .Values.sentinel.port }} sentinel get-master-addr-by-name {{ .Values.redis.masterGroupName }}
 
 Test failover (delete the current master pod and watch a replica get promoted):

@@ -33,3 +33,12 @@ persistence:
 
 service:
   type: ClusterIP
+
+# Expose each node via NodePort so an app on your host (bootRun) can reach the cluster.
+# announceIp empty => the node's own hostIP (correct for this single-node homelab).
+# Sentinel node list for clients: <node-ip>:31100, <node-ip>:31101, <node-ip>:31102
+external:
+  enabled: true
+  announceIp: ""
+  redisNodePortBase: 31000
+  sentinelNodePortBase: 31100

@@ -64,6 +64,21 @@ service:
   redisNodePort: ""
   sentinelNodePort: ""
 
+# External access for clients OUTSIDE the cluster (e.g. an app running on your host via
+# `./gradlew bootRun`). When enabled, each pod gets a per-pod NodePort Service and announces
+# <announceIp>:<nodePort> for itself + the master/replicas/peers — so Sentinel discovery
+# returns host-reachable addresses instead of in-cluster DNS names (which the host can't
+# resolve). This is the K8s equivalent of the host.docker.internal fix.
+#   pod-i redis    NodePort = redisNodePortBase + i      (e.g. 31000/31001/31002)
+#   pod-i sentinel NodePort = sentinelNodePortBase + i   (e.g. 31100/31101/31102)
+external:
+  enabled: false
+  # External/LAN IP the client uses to reach the node. Empty => the pod's own node IP
+  # (Downward API status.hostIP), which is correct for a single-node cluster.
+  announceIp: ""
+  redisNodePortBase: 31000
+  sentinelNodePortBase: 31100
+
 # Service account
 serviceAccount:
   create: true

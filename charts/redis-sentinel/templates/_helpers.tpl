@@ -85,3 +85,19 @@ secret value never lands in the rendered ConfigMap scripts.
   value: {{ .Values.redis.password | quote }}
 {{- end }}
 {{- end }}
+
+{{/*
+Env shared by both containers: the node IP (Downward API) used as the default external
+announce address, an optional explicit announce-ip override, and the optional password.
+*/}}
+{{- define "redis-sentinel.containerEnv" -}}
+- name: NODE_IP
+  valueFrom:
+    fieldRef:
+      fieldPath: status.hostIP
+{{- if .Values.external.announceIp }}
+- name: ANNOUNCE_IP
+  value: {{ .Values.external.announceIp | quote }}
+{{- end }}
+{{- include "redis-sentinel.passwordEnv" . }}
+{{- end }}

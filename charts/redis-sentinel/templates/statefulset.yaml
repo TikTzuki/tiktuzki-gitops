@@ -44,10 +44,8 @@ spec:
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command: [ "sh", "/scripts/start-redis.sh" ]
-          {{- with (include "redis-sentinel.passwordEnv" .) }}
           env:
-            {{- . | nindent 12 }}
-          {{- end }}
+            {{- include "redis-sentinel.containerEnv" . | nindent 12 }}
           ports:
             - name: redis
               containerPort: {{ .Values.redis.port }}
@@ -87,10 +85,8 @@ spec:
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command: [ "sh", "/scripts/start-sentinel.sh" ]
-          {{- with (include "redis-sentinel.passwordEnv" .) }}
           env:
-            {{- . | nindent 12 }}
-          {{- end }}
+            {{- include "redis-sentinel.containerEnv" . | nindent 12 }}
           ports:
             - name: sentinel
               containerPort: {{ .Values.sentinel.port }}

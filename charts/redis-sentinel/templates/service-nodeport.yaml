@@ -1,0 +1,32 @@
+{{- if .Values.external.enabled }}
+{{- $root := . }}
+{{- range $i := until (int .Values.replicaCount) }}
+---
+# Per-pod NodePort so external clients can reach each redis + sentinel directly. The pod
+# announces <nodeIP>:<nodePort> (base + ordinal), and these fixed NodePorts make that
+# announcement resolvable from outside the cluster.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "redis-sentinel.fullname" $root }}-{{ $i }}-ext
+  labels:
+    {{- include "redis-sentinel.labels" $root | nindent 4 }}
+    redis-sentinel.pod-ordinal: {{ $i | quote }}
+spec:
+  type: NodePort
+  selector:
+    {{- include "redis-sentinel.selectorLabels" $root | nindent 4 }}
+    statefulset.kubernetes.io/pod-name: {{ include "redis-sentinel.fullname" $root }}-{{ $i }}
+  ports:
+    - name: redis
+      port: {{ $root.Values.redis.port }}
+      targetPort: redis
+      protocol: TCP
+      nodePort: {{ add (int $root.Values.external.redisNodePortBase) $i }}
+    - name: sentinel
+      port: {{ $root.Values.sentinel.port }}
+      targetPort: sentinel
+      protocol: TCP
+      nodePort: {{ add (int $root.Values.external.sentinelNodePortBase) $i }}
+{{- end }}
+{{- end }}

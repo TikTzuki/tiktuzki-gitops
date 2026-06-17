@@ -10,8 +10,11 @@ data:
   #   * Ask every peer Sentinel who the master is; if found, replicate from it.
   #   * Else scan peer Redis nodes for one already reporting role:master.
   #   * Else fall back to ordinal-0 as the initial master (cold-start bootstrap).
-  # Each node announces its STABLE headless DNS name (not its pod IP), so the topology
-  # survives restarts.
+  #
+  # Addressing has two modes (external.enabled):
+  #   in-cluster -> announce the stable headless DNS name + internal port (6379/26379)
+  #   external   -> announce <nodeIP>:<nodePort> so clients OUTSIDE the cluster can follow
+  #                 Sentinel discovery (each pod gets a fixed NodePort = base + ordinal).
   start-redis.sh: |
     #!/bin/sh
     set -eu
@@ -23,7 +26,22 @@ data:
     MASTER_GROUP="{{ .Values.redis.masterGroupName }}"
     REDIS_PORT={{ .Values.redis.port }}
     SENTINEL_PORT={{ .Values.sentinel.port }}
+    EXTERNAL="{{ .Values.external.enabled }}"
+    REDIS_NP_BASE={{ .Values.external.redisNodePortBase }}
+    SENTINEL_NP_BASE={{ .Values.external.sentinelNodePortBase }}
+
+    ORD="${HOSTNAME##*-}"
+    ANNOUNCE_IP="${ANNOUNCE_IP:-${NODE_IP:-}}"
     MYHOST="${HOSTNAME}.${HEADLESS}.${NS}.svc.cluster.local"
+
+    # How THIS node advertises itself (what clients/sentinels use to reach me).
+    if [ "$EXTERNAL" = "true" ]; then
+      MY_ANNOUNCE_IP="$ANNOUNCE_IP"
+      MY_REDIS_ANNOUNCE_PORT=$((REDIS_NP_BASE + ORD))
+    else
+      MY_ANNOUNCE_IP="$MYHOST"
+      MY_REDIS_ANNOUNCE_PORT="$REDIS_PORT"
+    fi
 
     rcli() {
       if [ -n "${REDIS_PASSWORD:-}" ]; then
@@ -33,40 +51,55 @@ data:
       fi
     }
 
+    # Echoes "<ip> <port>" of the current master as ANNOUNCED (so it's directly usable for
+    # replicaof / sentinel monitor), or returns non-zero if no master is known yet.
     discover_master() {
       i=0
       while [ "$i" -lt "$REPLICAS" ]; do
         h="${SVC}-${i}.${HEADLESS}.${NS}.svc.cluster.local"
-        a=$(rcli -h "$h" -p "$SENTINEL_PORT" sentinel get-master-addr-by-name "$MASTER_GROUP" 2>/dev/null | head -n1 || true)
-        [ -n "$a" ] && { echo "$a"; return 0; }
+        out=$(rcli -h "$h" -p "$SENTINEL_PORT" sentinel get-master-addr-by-name "$MASTER_GROUP" 2>/dev/null || true)
+        mip=$(printf '%s\n' "$out" | sed -n 1p)
+        mport=$(printf '%s\n' "$out" | sed -n 2p)
+        if [ -n "$mip" ] && [ -n "$mport" ]; then echo "$mip $mport"; return 0; fi
         i=$((i+1))
       done
       i=0
       while [ "$i" -lt "$REPLICAS" ]; do
         h="${SVC}-${i}.${HEADLESS}.${NS}.svc.cluster.local"
         r=$(rcli -h "$h" -p "$REDIS_PORT" info replication 2>/dev/null | tr -d '\r' | awk -F: '/^role:/{print $2}' || true)
-        [ "$r" = "master" ] && { echo "$h"; return 0; }
+        if [ "$r" = "master" ]; then
+          if [ "$EXTERNAL" = "true" ]; then echo "$ANNOUNCE_IP $((REDIS_NP_BASE + i))"; else echo "$h $REDIS_PORT"; fi
+          return 0
+        fi
         i=$((i+1))
       done
       return 1
     }
 
-    MASTER="$(discover_master || true)"
-    [ -z "$MASTER" ] && MASTER="${SVC}-0.${HEADLESS}.${NS}.svc.cluster.local"
-    echo "redis bootstrap: me=${MYHOST} master=${MASTER}"
+    ML="$(discover_master || true)"
+    if [ -n "$ML" ]; then
+      MASTER_IP=${ML%% *}; MASTER_PORT=${ML##* }
+    elif [ "$EXTERNAL" = "true" ]; then
+      MASTER_IP="$ANNOUNCE_IP"; MASTER_PORT=$((REDIS_NP_BASE + 0))
+    else
+      MASTER_IP="${SVC}-0.${HEADLESS}.${NS}.svc.cluster.local"; MASTER_PORT="$REDIS_PORT"
+    fi
+    echo "redis bootstrap: me=${MY_ANNOUNCE_IP}:${MY_REDIS_ANNOUNCE_PORT} master=${MASTER_IP}:${MASTER_PORT}"
 
     {
       echo "port ${REDIS_PORT}"
       echo "dir /data"
-      echo "replica-announce-ip ${MYHOST}"
-      echo "replica-announce-port ${REDIS_PORT}"
+      echo "replica-announce-ip ${MY_ANNOUNCE_IP}"
+      echo "replica-announce-port ${MY_REDIS_ANNOUNCE_PORT}"
     {{- range (.Values.redis.extraConfig | default "" | trim | splitList "\n") }}
       echo {{ . | quote }}
     {{- end }}
     } > /tmp/redis.conf
 
-    if [ "$MASTER" != "$MYHOST" ]; then
-      echo "replicaof ${MASTER} ${REDIS_PORT}" >> /tmp/redis.conf
+    if [ "$MASTER_IP" = "$MY_ANNOUNCE_IP" ] && [ "$MASTER_PORT" = "$MY_REDIS_ANNOUNCE_PORT" ]; then
+      echo "  -> this node is the master"
+    else
+      echo "replicaof ${MASTER_IP} ${MASTER_PORT}" >> /tmp/redis.conf
     fi
     if [ -n "${REDIS_PASSWORD:-}" ]; then
       echo "requirepass ${REDIS_PASSWORD}" >> /tmp/redis.conf
@@ -77,8 +110,8 @@ data:
 
   # ── sentinel bootstrap ─────────────────────────────────────────────────────────────
   # Find the master (same discovery as redis, default ordinal-0), write sentinel.conf
-  # monitoring it by its stable DNS name, then exec redis-sentinel. Sentinels auto-discover
-  # each other through the master's pub/sub once they all monitor the same group.
+  # monitoring + announcing it, then exec redis-sentinel. Sentinels auto-discover each
+  # other through the master's pub/sub once they all monitor the same group.
   start-sentinel.sh: |
     #!/bin/sh
     set -eu
@@ -94,7 +127,21 @@ data:
     DOWN_AFTER={{ .Values.sentinel.downAfterMilliseconds }}
     FAILOVER_TIMEOUT={{ .Values.sentinel.failoverTimeout }}
     PARALLEL_SYNCS={{ .Values.sentinel.parallelSyncs }}
+    EXTERNAL="{{ .Values.external.enabled }}"
+    REDIS_NP_BASE={{ .Values.external.redisNodePortBase }}
+    SENTINEL_NP_BASE={{ .Values.external.sentinelNodePortBase }}
+
+    ORD="${HOSTNAME##*-}"
+    ANNOUNCE_IP="${ANNOUNCE_IP:-${NODE_IP:-}}"
     MYHOST="${HOSTNAME}.${HEADLESS}.${NS}.svc.cluster.local"
+
+    if [ "$EXTERNAL" = "true" ]; then
+      MY_ANNOUNCE_IP="$ANNOUNCE_IP"
+      MY_SENTINEL_ANNOUNCE_PORT=$((SENTINEL_NP_BASE + ORD))
+    else
+      MY_ANNOUNCE_IP="$MYHOST"
+      MY_SENTINEL_ANNOUNCE_PORT="$SENTINEL_PORT"
+    fi
 
     rcli() {
       if [ -n "${REDIS_PASSWORD:-}" ]; then
@@ -108,32 +155,43 @@ data:
       i=0
       while [ "$i" -lt "$REPLICAS" ]; do
         h="${SVC}-${i}.${HEADLESS}.${NS}.svc.cluster.local"
-        a=$(rcli -h "$h" -p "$SENTINEL_PORT" sentinel get-master-addr-by-name "$MASTER_GROUP" 2>/dev/null | head -n1 || true)
-        [ -n "$a" ] && { echo "$a"; return 0; }
+        out=$(rcli -h "$h" -p "$SENTINEL_PORT" sentinel get-master-addr-by-name "$MASTER_GROUP" 2>/dev/null || true)
+        mip=$(printf '%s\n' "$out" | sed -n 1p)
+        mport=$(printf '%s\n' "$out" | sed -n 2p)
+        if [ -n "$mip" ] && [ -n "$mport" ]; then echo "$mip $mport"; return 0; fi
         i=$((i+1))
       done
       i=0
       while [ "$i" -lt "$REPLICAS" ]; do
         h="${SVC}-${i}.${HEADLESS}.${NS}.svc.cluster.local"
         r=$(rcli -h "$h" -p "$REDIS_PORT" info replication 2>/dev/null | tr -d '\r' | awk -F: '/^role:/{print $2}' || true)
-        [ "$r" = "master" ] && { echo "$h"; return 0; }
+        if [ "$r" = "master" ]; then
+          if [ "$EXTERNAL" = "true" ]; then echo "$ANNOUNCE_IP $((REDIS_NP_BASE + i))"; else echo "$h $REDIS_PORT"; fi
+          return 0
+        fi
         i=$((i+1))
       done
       return 1
     }
 
-    MASTER="$(discover_master || true)"
-    [ -z "$MASTER" ] && MASTER="${SVC}-0.${HEADLESS}.${NS}.svc.cluster.local"
-    echo "sentinel bootstrap: me=${MYHOST} monitoring master=${MASTER}"
+    ML="$(discover_master || true)"
+    if [ -n "$ML" ]; then
+      MASTER_IP=${ML%% *}; MASTER_PORT=${ML##* }
+    elif [ "$EXTERNAL" = "true" ]; then
+      MASTER_IP="$ANNOUNCE_IP"; MASTER_PORT=$((REDIS_NP_BASE + 0))
+    else
+      MASTER_IP="${SVC}-0.${HEADLESS}.${NS}.svc.cluster.local"; MASTER_PORT="$REDIS_PORT"
+    fi
+    echo "sentinel bootstrap: me=${MY_ANNOUNCE_IP}:${MY_SENTINEL_ANNOUNCE_PORT} monitoring master=${MASTER_IP}:${MASTER_PORT}"
 
     {
       echo "port ${SENTINEL_PORT}"
       echo "dir /tmp"
       echo "sentinel resolve-hostnames yes"
       echo "sentinel announce-hostnames yes"
-      echo "sentinel announce-ip ${MYHOST}"
-      echo "sentinel announce-port ${SENTINEL_PORT}"
-      echo "sentinel monitor ${MASTER_GROUP} ${MASTER} ${REDIS_PORT} ${QUORUM}"
+      echo "sentinel announce-ip ${MY_ANNOUNCE_IP}"
+      echo "sentinel announce-port ${MY_SENTINEL_ANNOUNCE_PORT}"
+      echo "sentinel monitor ${MASTER_GROUP} ${MASTER_IP} ${MASTER_PORT} ${QUORUM}"
       echo "sentinel down-after-milliseconds ${MASTER_GROUP} ${DOWN_AFTER}"
       echo "sentinel failover-timeout ${MASTER_GROUP} ${FAILOVER_TIMEOUT}"
       echo "sentinel parallel-syncs ${MASTER_GROUP} ${PARALLEL_SYNCS}"
