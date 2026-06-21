@@ -92,3 +92,14 @@ nodeSelector:
 
 tolerations: [ ]
 affinity: { }
+
+ingress:
+  enabled: true
+  className: public
+  annotations: { }
+  hosts:
+    - host: ollama.tiktuzki.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: [ ]

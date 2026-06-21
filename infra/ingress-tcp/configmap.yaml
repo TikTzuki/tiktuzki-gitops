@@ -1,0 +1,14 @@
+# TCP stream passthrough for the MicroK8s nginx ingress controller.
+# Lets raw-TCP services (databases) be reached on node1's host ports — which,
+# with the controller in hostNetwork mode, are reachable over the NetBird overlay.
+# Format:  "<listen-port>": "<namespace>/<service>:<service-port>"
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-ingress-tcp-microk8s-conf
+  namespace: ingress
+data:
+  "5432": "database/timescaledb:5432"
+  "6379": "database/redis-sentinel:6379"
+  "26379": "database/redis-sentinel:26379"
+  "3000": "database/tigerbeetle:3000"

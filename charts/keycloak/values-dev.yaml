@@ -246,9 +246,9 @@ service:
 ## @section Ingress configuration
 ingress:
   ## @param ingress.enabled Enable ingress record generation for Keycloak
-  enabled: false
+  enabled: true
   ## @param ingress.className IngressClass that will be used to implement the Ingress
-  className: ""
+  className: public
   ## @param ingress.annotations Additional annotations for the Ingress resource
   annotations: { }
   # kubernetes.io/ingress.class: nginx
@@ -258,7 +258,7 @@ ingress:
   ## @param ingress.hosts[0].paths[0].path Path for Keycloak ingress
   ## @param ingress.hosts[0].paths[0].pathType Path type for Keycloak ingress
   hosts:
-    - host: keycloak.local
+    - host: keycloak.tiktuzki.com
       paths:
         - path: /
           pathType: Prefix

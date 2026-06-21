@@ -103,6 +103,19 @@ app-template:
           port: 18789
           nodePort: 31789
 
+  ingress:
+    main:
+      enabled: true
+      className: public
+      hosts:
+        - host: openclaw.tiktuzki.com
+          paths:
+            - path: /
+              pathType: Prefix
+              service:
+                identifier: main
+                port: http
+
   persistence:
     data:
       enabled: true
