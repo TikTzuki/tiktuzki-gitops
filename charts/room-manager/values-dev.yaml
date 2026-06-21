@@ -70,7 +70,7 @@ springBoot:
   profiles: "prod"
 
 service:
-  type: NodePort
+  type: ClusterIP
   port: 8080
   nodePort: 32005
 

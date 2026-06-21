@@ -28,3 +28,29 @@ spec:
       nodePort: 30444
   selector:
     app.kubernetes.io/name: argocd-server
+---
+# ArgoCD UI ingress.
+# Public path: browser -> NPM (TLS, *.tiktuzki.com) -> node1:80 hostNetwork ingress
+#              -> this rule -> argocd-server (HTTPS backend on 8080).
+# backend-protocol HTTPS is required because argocd-server terminates its own TLS,
+# so no change to ArgoCD's own config is needed.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: argocd-server-ingress
+  namespace: devops
+  annotations:
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+spec:
+  ingressClassName: public
+  rules:
+    - host: argocd.tiktuzki.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: argocd-server
+                port:
+                  number: 443

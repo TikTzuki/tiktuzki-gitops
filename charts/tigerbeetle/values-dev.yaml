@@ -15,6 +15,6 @@ persistence:
                 - node1
 
 service:
-  type: NodePort
+  type: ClusterIP
   port: 3000
   nodePort: 30300

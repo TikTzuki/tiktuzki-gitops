@@ -97,7 +97,7 @@ app-template:
 
   service:
     main:
-      type: NodePort
+      type: ClusterIP
       ports:
         http:
           port: 18789
