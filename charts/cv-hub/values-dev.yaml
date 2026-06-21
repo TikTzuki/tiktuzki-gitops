@@ -31,3 +31,12 @@ persistence:
               operator: In
               values:
                 - node1
+
+ingress:
+  enabled: true
+  className: public
+  hosts:
+    - host: cv-hub.tiktuzki.com
+      paths:
+        - path: /
+          pathType: Prefix

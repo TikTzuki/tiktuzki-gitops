@@ -35,14 +35,14 @@ securityContext: { }
 
 
 ingress:
-  enabled: false
-  className: ""
+  enabled: true
+  className: public
   annotations: { }
   hosts:
-    - host: chart-example.local
+    - host: checkin.tiktuzki.com
       paths:
         - path: /
-          pathType: ImplementationSpecific
+          pathType: Prefix
   tls: [ ]
 
 httpRoute:

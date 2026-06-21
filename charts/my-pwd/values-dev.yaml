@@ -19,3 +19,12 @@ env:
 envFrom:
   - secretRef:
       name: my-pwd-env
+
+ingress:
+  enabled: true
+  className: public
+  hosts:
+    - host: my-pwd.tiktuzki.com
+      paths:
+        - path: /
+          pathType: Prefix

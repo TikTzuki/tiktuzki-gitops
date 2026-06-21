@@ -49,3 +49,12 @@ serviceAccount:
   automount: true
   annotations: { }
   name: ""
+
+ingress:
+  enabled: true
+  className: public
+  hosts:
+    - host: room-manager.tiktuzki.com
+      paths:
+        - path: /
+          pathType: Prefix

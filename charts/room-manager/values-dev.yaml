@@ -122,3 +122,12 @@ serviceAccount:
   automount: true
   annotations: { }
   name: ""
+
+ingress:
+  enabled: true
+  className: public
+  hosts:
+    - host: api.room-manager.tiktuzki.com
+      paths:
+        - path: /
+          pathType: Prefix
