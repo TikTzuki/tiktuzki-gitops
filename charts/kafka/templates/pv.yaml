@@ -1,0 +1,28 @@
+{{- if and .Values.persistence.enabled .Values.persistence.useLocalVolume }}
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: {{ include "kafka.fullname" . }}-pv
+  labels:
+    {{- include "kafka.labels" . | nindent 4 }}
+spec:
+  capacity:
+    storage: {{ .Values.persistence.size }}
+  volumeMode: Filesystem
+  accessModes:
+    {{- range .Values.persistence.accessModes }}
+    - {{ . | quote }}
+    {{- end }}
+  persistentVolumeReclaimPolicy: Retain
+  {{- if .Values.persistence.storageClass }}
+  storageClassName: {{ .Values.persistence.storageClass | quote }}
+  {{- else }}
+  storageClassName: ""
+  {{- end }}
+  local:
+    path: {{ .Values.persistence.localPath }}
+  {{- with .Values.persistence.nodeAffinity }}
+  nodeAffinity:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}

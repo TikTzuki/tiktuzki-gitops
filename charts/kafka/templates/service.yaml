@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "kafka.fullname" . }}
+  labels:
+    {{- include "kafka.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - name: client
+      port: {{ .Values.kafka.clientPort }}
+      targetPort: client
+      protocol: TCP
+      {{- if and (eq .Values.service.type "NodePort") .Values.service.clientNodePort }}
+      nodePort: {{ .Values.service.clientNodePort }}
+      {{- end }}
+    {{- if .Values.external.enabled }}
+    - name: external
+      port: {{ .Values.external.port }}
+      targetPort: external
+      protocol: TCP
+    {{- end }}
+  selector:
+    {{- include "kafka.selectorLabels" . | nindent 4 }}

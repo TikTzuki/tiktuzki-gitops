@@ -1,0 +1,102 @@
+# Default values for kafka (KRaft, single-node combined broker+controller).
+
+# Chart name overrides
+nameOverride: ""
+fullnameOverride: ""
+
+# Number of pods. This chart is designed for a single combined-mode node (broker+controller).
+# Scaling >1 also requires raising the replication factors below and pre-provisioning one
+# local PV per replica (see persistence).
+replicaCount: 1
+
+# Container image
+image:
+  repository: apache/kafka
+  tag: "3.9.1"
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: [ ]
+
+# KRaft cluster id used to format the log dir on FIRST boot only (ignored once formatted).
+# Keep this stable across restarts. Regenerate with: kafka-storage.sh random-uuid
+clusterId: "5L6g3nShT-eMCtK--X86sw"
+
+kafka:
+  # Broker (client) listener — used by in-cluster clients.
+  clientPort: 9092
+  # Controller listener — internal KRaft quorum traffic only (never advertised to clients).
+  controllerPort: 9093
+  # JVM heap. Keep below the container memory limit.
+  heapOpts: "-Xmx1g -Xms1g"
+  # Where Kafka stores its log segments (the data volume is mounted here).
+  logDirs: /var/lib/kafka/data
+  # Topic defaults. For a single broker these MUST be 1.
+  replicationFactor: 1
+  minInsyncReplicas: 1
+  numPartitions: 1
+  autoCreateTopics: true
+  # Extra KAFKA_* env vars merged verbatim into the container (e.g. KAFKA_LOG_RETENTION_HOURS).
+  extraConfig: { }
+  resources: { }
+
+# External listener for clients OUTSIDE the cluster (host / NetBird overlay), fronted by the
+# ingress-tcp stream on node1. When enabled, the broker advertises EXTERNAL://<host>:<port>
+# so external clients reconnect to an address they can actually reach.
+external:
+  enabled: true
+  port: 9094
+  # Address external clients use to reach node1's external port. Empty => the pod's own node IP
+  # (Downward API status.hostIP). Set explicitly to node1's NetBird/LAN address if status.hostIP
+  # is not the interface clients use.
+  advertisedHost: ""
+
+# Per-pod data volume.
+#   enabled: false -> emptyDir (ephemeral; data lost on restart)
+#   enabled: true  -> volumeClaimTemplate. With useLocalVolume the chart also creates a local
+#                     PersistentVolume pinned to a node (see pv.yaml) and binds to it by label.
+persistence:
+  enabled: true
+  storageClass: ""
+  # Create + bind a node-local PersistentVolume (hostPath-style). Requires localPath + nodeAffinity.
+  useLocalVolume: false
+  localPath: ""
+  size: 8Gi
+  accessModes:
+    - ReadWriteOnce
+  # nodeAffinity for the local PV (required when useLocalVolume).
+  nodeAffinity: { }
+  # Mount an existing PVC instead of provisioning one.
+  existingClaim: ""
+
+# Client-facing service. In-cluster clients bootstrap against <fullname>.<ns>.svc:clientPort.
+service:
+  type: ClusterIP
+  # Only used when type: NodePort
+  clientNodePort: ""
+
+# Service account
+serviceAccount:
+  create: true
+  automount: true
+  annotations: { }
+  name: ""
+
+# Pod configuration
+podAnnotations: { }
+podLabels: { }
+# The apache/kafka image runs as uid/gid 1000; fsGroup lets it write the (chowned) data volume.
+podSecurityContext:
+  fsGroup: 1000
+securityContext:
+  runAsUser: 1000
+  runAsGroup: 1000
+  runAsNonRoot: true
+  allowPrivilegeEscalation: false
+
+# Fallback resources if kafka.resources is unset
+resources: { }
+
+# Scheduling
+nodeSelector: { }
+tolerations: [ ]
+affinity: { }

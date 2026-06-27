@@ -1,0 +1,16 @@
+Kafka ({{ .Chart.AppVersion }}, KRaft single-node combined) deployed as {{ include "kafka.fullname" . }}.
+
+In-cluster clients — bootstrap servers:
+  {{ include "kafka.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.kafka.clientPort }}
+
+{{ if .Values.external.enabled -}}
+External clients (host / overlay) — bootstrap servers:
+  <node1-address>:{{ .Values.external.port }}
+  (requires "{{ .Values.external.port }}": "{{ .Release.Namespace }}/{{ include "kafka.fullname" . }}:{{ .Values.external.port }}"
+   in the ingress-tcp configmap; the broker advertises
+   {{ if .Values.external.advertisedHost }}{{ .Values.external.advertisedHost }}{{ else }}<node IP>{{ end }}:{{ .Values.external.port }})
+{{ end -}}
+
+Quick check (from inside the pod):
+  kubectl -n {{ .Release.Namespace }} exec -it {{ include "kafka.fullname" . }}-0 -- \
+    /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:{{ .Values.kafka.clientPort }} --list

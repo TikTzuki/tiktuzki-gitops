@@ -1,0 +1,46 @@
+# Development values for kafka (single-node KRaft homelab on node1).
+
+replicaCount: 1
+
+image:
+  tag: "3.9.1"
+
+# Stable dev cluster id. Regenerate with kafka-storage.sh random-uuid if you wipe the volume.
+clusterId: "5L6g3nShT-eMCtK--X86sw"
+
+kafka:
+  replicationFactor: 1
+  minInsyncReplicas: 1
+  numPartitions: 1
+  resources:
+    limits:
+      cpu: "1"
+      memory: 1536Mi
+    requests:
+      cpu: 250m
+      memory: 768Mi
+
+# Reachable from the host/overlay on node1:9094 via the ingress-tcp stream configmap.
+# advertisedHost empty => the pod's node IP (status.hostIP). If clients reach node1 over a
+# different interface (e.g. NetBird), set this to that address.
+external:
+  enabled: true
+  port: 9094
+  advertisedHost: ""
+
+# Durable node-local volume on node1 (same pattern as timescaledb).
+persistence:
+  enabled: true
+  useLocalVolume: true
+  localPath: /home/tik/data/kafka
+  size: 20Gi
+  accessModes:
+    - ReadWriteOnce
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - node1

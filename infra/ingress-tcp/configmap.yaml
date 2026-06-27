@@ -12,3 +12,4 @@ data:
   "6379": "database/redis-sentinel:6379"
   "26379": "database/redis-sentinel:26379"
   "3000": "database/tigerbeetle:3000"
+  "9094": "database/kafka:9094"

@@ -1,0 +1,38 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "kafka.fullname" . }}-scripts
+  labels:
+    {{- include "kafka.labels" . | nindent 4 }}
+data:
+  start-kafka.sh: |
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    # This pod's stable DNS name (StatefulSet ordinal + headless service). Used for both the
+    # advertised in-cluster listener and the KRaft controller quorum, so identity survives restarts.
+    POD_FQDN="${POD_NAME}.{{ include "kafka.headlessServiceName" . }}.${POD_NAMESPACE}.svc.cluster.local"
+
+    # KRaft node id = StatefulSet ordinal (e.g. kafka-0 -> 0).
+    export KAFKA_NODE_ID="${POD_NAME##*-}"
+
+    # Single combined-mode node: the quorum voter is this node's controller listener.
+    export KAFKA_CONTROLLER_QUORUM_VOTERS="${KAFKA_NODE_ID}@${POD_FQDN}:{{ .Values.kafka.controllerPort }}"
+
+    # In-cluster clients resolve the advertised PLAINTEXT endpoint via the headless service.
+    ADVERTISED="PLAINTEXT://${POD_FQDN}:{{ .Values.kafka.clientPort }}"
+    {{- if .Values.external.enabled }}
+    # External clients reach node1:{{ .Values.external.port }} (ingress-tcp stream); advertise an
+    # address they can actually connect back to (explicit override, else the node's own IP).
+    EXTERNAL_HOST="${EXTERNAL_ADVERTISED_HOST:-$NODE_IP}"
+    ADVERTISED="${ADVERTISED},EXTERNAL://${EXTERNAL_HOST}:{{ .Values.external.port }}"
+    {{- end }}
+    export KAFKA_ADVERTISED_LISTENERS="${ADVERTISED}"
+
+    echo "Starting Kafka node ${KAFKA_NODE_ID} at ${POD_FQDN}"
+    echo "  KAFKA_ADVERTISED_LISTENERS=${KAFKA_ADVERTISED_LISTENERS}"
+    echo "  KAFKA_CONTROLLER_QUORUM_VOTERS=${KAFKA_CONTROLLER_QUORUM_VOTERS}"
+
+    # Hand off to the apache/kafka image entrypoint, which renders server.properties from the
+    # KAFKA_* env, formats the log dir with CLUSTER_ID on first boot, and starts the broker.
+    exec /etc/kafka/docker/run
