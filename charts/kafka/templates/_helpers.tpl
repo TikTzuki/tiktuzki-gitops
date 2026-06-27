@@ -94,6 +94,18 @@ KAFKA_LISTENER_SECURITY_PROTOCOL_MAP — all PLAINTEXT in this homelab setup.
 {{- end }}
 
 {{/*
+Name of the data PVC the StatefulSet mounts — the user-supplied existingClaim, or the
+standalone PVC this chart creates (see pvc.yaml).
+*/}}
+{{- define "kafka.pvcName" -}}
+{{- if .Values.persistence.existingClaim -}}
+{{- .Values.persistence.existingClaim -}}
+{{- else -}}
+{{- printf "%s-pvc" (include "kafka.fullname" .) -}}
+{{- end -}}
+{{- end }}
+
+{{/*
 Name of the secret holding the SCRAM admin password.
 */}}
 {{- define "kafka.auth.secretName" -}}

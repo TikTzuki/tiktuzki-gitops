@@ -67,10 +67,15 @@ external:
   # is not the interface clients use.
   advertisedHost: ""
 
-# Per-pod data volume.
+# Data volume. The chart provisions a STANDALONE PVC (pvc.yaml) that the StatefulSet mounts by
+# name — deliberately NOT a volumeClaimTemplate, so storage lives outside the StatefulSet's
+# immutable spec and chart changes never trigger "forbidden update to statefulset spec".
 #   enabled: false -> emptyDir (ephemeral; data lost on restart)
-#   enabled: true  -> volumeClaimTemplate. With useLocalVolume the chart also creates a local
-#                     PersistentVolume pinned to a node (see pv.yaml) and binds to it by label.
+#   enabled: true  -> creates {{fullname}}-pvc; with useLocalVolume also creates a node-local PV
+#                     (pv.yaml) and binds the PVC to it by label.
+#   existingClaim  -> mount that PVC instead of creating one.
+# NOTE: a single shared PVC supports replicaCount: 1 (this chart's single-node design). For
+# multiple brokers you would need per-pod claims (volumeClaimTemplates) instead.
 persistence:
   enabled: true
   storageClass: ""
