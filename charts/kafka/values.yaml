@@ -39,6 +39,23 @@ kafka:
   extraConfig: { }
   resources: { }
 
+# Authentication. SASL/SCRAM-SHA-512 is applied ONLY to the EXTERNAL listener — in-cluster
+# clients (and kafka-ui) keep using the trusted PLAINTEXT listener, and the KRaft controller +
+# inter-broker traffic stay PLAINTEXT. Mirrors the ewallet compose security model.
+# NOTE: SASL_PLAINTEXT authenticates clients but does NOT encrypt traffic (SCRAM protects the
+# password via challenge-response, but payloads are cleartext). Use SASL_SSL for real encryption.
+auth:
+  # Requires external.enabled (auth secures the external listener). No-op otherwise.
+  enabled: false
+  mechanism: SCRAM-SHA-512
+  username: admin
+  # Password source: existingSecret+passwordKey wins; otherwise the inline password.
+  password: ""
+  existingSecret: ""
+  passwordKey: kafka-admin-password
+  # Seed the SCRAM user via a post-sync Job against the internal plaintext listener (idempotent).
+  seedCredentials: true
+
 # External listener for clients OUTSIDE the cluster (host / NetBird overlay), fronted by the
 # ingress-tcp stream on node1. When enabled, the broker advertises EXTERNAL://<host>:<port>
 # so external clients reconnect to an address they can actually reach.
@@ -92,6 +109,44 @@ securityContext:
   runAsGroup: 1000
   runAsNonRoot: true
   allowPrivilegeEscalation: false
+
+# Kafka UI — a web dashboard for the broker (kafbat/kafka-ui, the maintained successor to the
+# archived provectuslabs/kafka-ui). Stateless; connects to the broker over the in-cluster
+# PLAINTEXT listener. Exposed as a normal HTTP Ingress (it is a web app, unlike the broker).
+kafkaUi:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: ghcr.io/kafbat/kafka-ui
+    # Pin a release from https://github.com/kafbat/kafka-ui/releases for reproducible deploys.
+    tag: "latest"
+    pullPolicy: IfNotPresent
+  # Display name of the cluster inside the UI.
+  clusterName: kafka
+  # Allow editing cluster config from the UI (stored in-memory unless a config volume is added).
+  dynamicConfigEnabled: true
+  service:
+    type: ClusterIP
+    port: 8080
+  ingress:
+    enabled: false
+    className: public
+    annotations: { }
+    hosts:
+      - host: kafka-ui.tiktuzki.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls: [ ]
+  # Extra environment variables (KAFKA_CLUSTERS_0_* etc.) merged verbatim.
+  extraEnv: { }
+  podAnnotations: { }
+  podSecurityContext: { }
+  securityContext: { }
+  resources: { }
+  nodeSelector: { }
+  tolerations: [ ]
+  affinity: { }
 
 # Fallback resources if kafka.resources is unset
 resources: { }

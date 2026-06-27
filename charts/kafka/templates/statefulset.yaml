@@ -75,6 +75,10 @@ spec:
               value: "CONTROLLER"
             - name: KAFKA_INTER_BROKER_LISTENER_NAME
               value: "PLAINTEXT"
+            {{- if and .Values.auth.enabled .Values.external.enabled }}
+            - name: KAFKA_SASL_ENABLED_MECHANISMS
+              value: {{ .Values.auth.mechanism | quote }}
+            {{- end }}
             - name: KAFKA_LOG_DIRS
               value: {{ .Values.kafka.logDirs | quote }}
             - name: KAFKA_HEAP_OPTS

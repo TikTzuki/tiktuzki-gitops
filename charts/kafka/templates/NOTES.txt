@@ -9,6 +9,25 @@ External clients (host / overlay) — bootstrap servers:
   (requires "{{ .Values.external.port }}": "{{ .Release.Namespace }}/{{ include "kafka.fullname" . }}:{{ .Values.external.port }}"
    in the ingress-tcp configmap; the broker advertises
    {{ if .Values.external.advertisedHost }}{{ .Values.external.advertisedHost }}{{ else }}<node IP>{{ end }}:{{ .Values.external.port }})
+{{- if .Values.auth.enabled }}
+
+  External access requires SASL/{{ .Values.auth.mechanism }}. Client config:
+    security.protocol=SASL_PLAINTEXT
+    sasl.mechanism={{ .Values.auth.mechanism }}
+    sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required \
+      username="{{ .Values.auth.username }}" password="<from {{ include "kafka.auth.secretName" . }}/{{ .Values.auth.passwordKey }}>";
+{{- end }}
+{{ end -}}
+
+{{ if .Values.kafkaUi.enabled -}}
+Kafka UI:
+{{- if .Values.kafkaUi.ingress.enabled }}
+  {{- range .Values.kafkaUi.ingress.hosts }}
+  http://{{ .host }}/
+  {{- end }}
+{{- else }}
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "kafka.ui.fullname" . }} {{ .Values.kafkaUi.service.port }}:{{ .Values.kafkaUi.service.port }}
+{{- end }}
 {{ end -}}
 
 Quick check (from inside the pod):

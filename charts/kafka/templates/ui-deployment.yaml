@@ -1,0 +1,93 @@
+{{- if .Values.kafkaUi.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "kafka.ui.fullname" . }}
+  labels:
+    {{- include "kafka.ui.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.kafkaUi.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "kafka.ui.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.kafkaUi.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "kafka.ui.labels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.kafkaUi.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: kafka-ui
+          {{- with .Values.kafkaUi.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          image: "{{ .Values.kafkaUi.image.repository }}:{{ .Values.kafkaUi.image.tag }}"
+          imagePullPolicy: {{ .Values.kafkaUi.image.pullPolicy }}
+          env:
+            - name: KAFKA_CLUSTERS_0_NAME
+              value: {{ .Values.kafkaUi.clusterName | quote }}
+            # Connect over the in-cluster PLAINTEXT listener; the broker advertises its headless
+            # DNS name, which resolves from this namespace.
+            - name: KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS
+              value: "{{ include "kafka.fullname" . }}:{{ .Values.kafka.clientPort }}"
+            - name: DYNAMIC_CONFIG_ENABLED
+              value: {{ .Values.kafkaUi.dynamicConfigEnabled | quote }}
+            {{- range $k, $v := .Values.kafkaUi.extraEnv }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          startupProbe:
+            httpGet:
+              path: /actuator/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 30
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: http
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 5
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 5
+          {{- with .Values.kafkaUi.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      {{- with .Values.kafkaUi.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.kafkaUi.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.kafkaUi.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

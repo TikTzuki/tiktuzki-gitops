@@ -19,6 +19,12 @@ data:
     # Single combined-mode node: the quorum voter is this node's controller listener.
     export KAFKA_CONTROLLER_QUORUM_VOTERS="${KAFKA_NODE_ID}@${POD_FQDN}:{{ .Values.kafka.controllerPort }}"
 
+    {{- if and .Values.auth.enabled .Values.external.enabled }}
+    # SASL/SCRAM on the EXTERNAL listener needs a broker JAAS context (credentials themselves
+    # live in the metadata log, seeded separately).
+    export KAFKA_OPTS="-Djava.security.auth.login.config=/scripts/kafka_server_jaas.conf ${KAFKA_OPTS:-}"
+    {{- end }}
+
     # In-cluster clients resolve the advertised PLAINTEXT endpoint via the headless service.
     ADVERTISED="PLAINTEXT://${POD_FQDN}:{{ .Values.kafka.clientPort }}"
     {{- if .Values.external.enabled }}
@@ -36,3 +42,12 @@ data:
     # Hand off to the apache/kafka image entrypoint, which renders server.properties from the
     # KAFKA_* env, formats the log dir with CLUSTER_ID on first boot, and starts the broker.
     exec /etc/kafka/docker/run
+  {{- if and .Values.auth.enabled .Values.external.enabled }}
+  kafka_server_jaas.conf: |
+    // Broker-side JAAS for the EXTERNAL SASL_PLAINTEXT listener.
+    // ScramLoginModule needs no embedded credentials — user records live in the broker metadata
+    // log and are seeded by the {{ include "kafka.fullname" . }}-scram-init Job.
+    KafkaServer {
+      org.apache.kafka.common.security.scram.ScramLoginModule required;
+    };
+  {{- end }}

@@ -1,0 +1,59 @@
+{{- if and .Values.auth.enabled .Values.external.enabled .Values.auth.seedCredentials }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "kafka.fullname" . }}-scram-init
+  labels:
+    {{- include "kafka.labels" . | nindent 4 }}
+    app.kubernetes.io/component: scram-init
+  annotations:
+    # Run after the broker is synced/healthy, and replace any prior run on each sync.
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 10
+  template:
+    metadata:
+      labels:
+        {{- include "kafka.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: scram-init
+    spec:
+      restartPolicy: OnFailure
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: scram-init
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: [ "/bin/bash", "-c" ]
+          args:
+            - |
+              set -euo pipefail
+              export PATH="/opt/kafka/bin:$PATH"
+              BOOTSTRAP="{{ include "kafka.fullname" . }}:{{ .Values.kafka.clientPort }}"
+
+              # Seed via the internal PLAINTEXT listener — no auth needed to write credentials.
+              echo "Waiting for ${BOOTSTRAP}..."
+              until kafka-broker-api-versions.sh --bootstrap-server "${BOOTSTRAP}" >/dev/null 2>&1; do
+                sleep 3
+              done
+
+              # Idempotent: --add-config re-sets the password (no-op if unchanged).
+              kafka-configs.sh --bootstrap-server "${BOOTSTRAP}" \
+                --alter \
+                --add-config "{{ .Values.auth.mechanism }}=[password=${KAFKA_ADMIN_PASSWORD}]" \
+                --entity-type users --entity-name "{{ .Values.auth.username }}"
+              echo "SCRAM credential ensured for user '{{ .Values.auth.username }}'."
+          env:
+            - name: KAFKA_ADMIN_PASSWORD
+              {{- if .Values.auth.existingSecret }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.auth.existingSecret }}
+                  key: {{ .Values.auth.passwordKey }}
+              {{- else }}
+              value: {{ required "auth.password or auth.existingSecret is required when auth.enabled" .Values.auth.password | quote }}
+              {{- end }}
+{{- end }}

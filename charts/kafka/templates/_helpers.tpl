@@ -87,7 +87,38 @@ KAFKA_LISTENER_SECURITY_PROTOCOL_MAP — all PLAINTEXT in this homelab setup.
 {{- define "kafka.protocolMap" -}}
 {{- $m := "PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT" -}}
 {{- if .Values.external.enabled -}}
-{{- $m = printf "%s,EXTERNAL:PLAINTEXT" $m -}}
+{{- $extProto := ternary "SASL_PLAINTEXT" "PLAINTEXT" .Values.auth.enabled -}}
+{{- $m = printf "%s,EXTERNAL:%s" $m $extProto -}}
 {{- end -}}
 {{- $m -}}
+{{- end }}
+
+{{/*
+Name of the secret holding the SCRAM admin password.
+*/}}
+{{- define "kafka.auth.secretName" -}}
+{{- if .Values.auth.existingSecret -}}
+{{- .Values.auth.existingSecret -}}
+{{- else -}}
+{{- include "kafka.fullname" . -}}
+{{- end -}}
+{{- end }}
+
+{{/*
+Kafka UI (kafbat/kafka-ui) — a separate web Deployment fronting the broker.
+*/}}
+{{- define "kafka.ui.fullname" -}}
+{{- printf "%s-ui" (include "kafka.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{- define "kafka.ui.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "kafka.name" . }}-ui
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}
+
+{{- define "kafka.ui.labels" -}}
+helm.sh/chart: {{ include "kafka.chart" . }}
+{{ include "kafka.ui.selectorLabels" . }}
+app.kubernetes.io/component: kafka-ui
+app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end }}

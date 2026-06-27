@@ -20,6 +20,15 @@ kafka:
       cpu: 250m
       memory: 768Mi
 
+# Require SASL/SCRAM-SHA-512 on the external listener (node1:9094). Internal listener and
+# kafka-ui stay plaintext. Admin password comes from the in-repo database-secret.
+auth:
+  enabled: true
+  username: admin
+  existingSecret: database-secret
+  passwordKey: kafka-admin-password
+  seedCredentials: true
+
 # Reachable from the host/overlay on node1:9094 via the ingress-tcp stream configmap.
 # advertisedHost empty => the pod's node IP (status.hostIP). If clients reach node1 over a
 # different interface (e.g. NetBird), set this to that address.
@@ -27,6 +36,28 @@ external:
   enabled: true
   port: 9094
   advertisedHost: ""
+
+# Kafka UI dashboard, exposed at kafka-ui.tiktuzki.com (NPM -> node1:80 -> public ingress).
+kafkaUi:
+  enabled: true
+  clusterName: kafka-dev
+  ingress:
+    enabled: true
+    className: public
+    annotations: { }
+    hosts:
+      - host: kafka-ui.tiktuzki.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls: [ ]
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 50m
+      memory: 256Mi
 
 # Durable node-local volume on node1 (same pattern as timescaledb).
 persistence:
