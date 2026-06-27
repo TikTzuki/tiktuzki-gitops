@@ -44,6 +44,41 @@ spec:
               value: "{{ include "kafka.fullname" . }}:{{ .Values.kafka.clientPort }}"
             - name: DYNAMIC_CONFIG_ENABLED
               value: {{ .Values.kafkaUi.dynamicConfigEnabled | quote }}
+            {{- if eq .Values.kafkaUi.auth.type "LOGIN_FORM" }}
+            - name: AUTH_TYPE
+              value: "LOGIN_FORM"
+            - name: SPRING_SECURITY_USER_NAME
+              value: {{ .Values.kafkaUi.auth.loginForm.username | quote }}
+            - name: SPRING_SECURITY_USER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "kafkaUi.auth.loginForm.existingSecret is required for LOGIN_FORM" .Values.kafkaUi.auth.loginForm.existingSecret }}
+                  key: {{ .Values.kafkaUi.auth.loginForm.passwordKey }}
+            {{- else if eq .Values.kafkaUi.auth.type "OAUTH2" }}
+            - name: AUTH_TYPE
+              value: "OAUTH2"
+            # Build redirect URIs from the X-Forwarded-* headers set by NPM/ingress, so the
+            # OAuth2 callback uses the external https URL instead of the in-cluster http one.
+            - name: SERVER_FORWARDHEADERSSTRATEGY
+              value: "NATIVE"
+            - name: AUTH_OAUTH2_CLIENT_KEYCLOAK_PROVIDER
+              value: "keycloak"
+            - name: AUTH_OAUTH2_CLIENT_KEYCLOAK_CLIENTID
+              value: {{ .Values.kafkaUi.auth.oauth2.clientId | quote }}
+            - name: AUTH_OAUTH2_CLIENT_KEYCLOAK_CLIENTSECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "kafkaUi.auth.oauth2.existingSecret is required for OAUTH2" .Values.kafkaUi.auth.oauth2.existingSecret }}
+                  key: {{ .Values.kafkaUi.auth.oauth2.clientSecretKey }}
+            - name: AUTH_OAUTH2_CLIENT_KEYCLOAK_SCOPE
+              value: {{ .Values.kafkaUi.auth.oauth2.scope | quote }}
+            - name: AUTH_OAUTH2_CLIENT_KEYCLOAK_ISSUER_URI
+              value: {{ required "kafkaUi.auth.oauth2.issuerUri is required for OAUTH2" .Values.kafkaUi.auth.oauth2.issuerUri | quote }}
+            - name: AUTH_OAUTH2_CLIENT_KEYCLOAK_CLIENT_NAME
+              value: {{ .Values.kafkaUi.auth.oauth2.clientName | quote }}
+            - name: AUTH_OAUTH2_CLIENT_KEYCLOAK_USER_NAME_ATTRIBUTE
+              value: "preferred_username"
+            {{- end }}
             {{- range $k, $v := .Values.kafkaUi.extraEnv }}
             - name: {{ $k }}
               value: {{ $v | quote }}

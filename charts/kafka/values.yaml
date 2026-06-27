@@ -130,6 +130,25 @@ kafkaUi:
   clusterName: kafka
   # Allow editing cluster config from the UI (stored in-memory unless a config volume is added).
   dynamicConfigEnabled: true
+  # Dashboard login. type: DISABLED (open) | LOGIN_FORM (shared user/pass) | OAUTH2 (Keycloak SSO).
+  auth:
+    type: DISABLED
+    # Used when type: LOGIN_FORM
+    loginForm:
+      username: admin
+      existingSecret: ""
+      passwordKey: kafka-ui-password
+    # Used when type: OAUTH2. Register a confidential OIDC client in Keycloak with redirect URI:
+    #   https://<kafka-ui host>/login/oauth2/code/keycloak
+    oauth2:
+      clientId: kafka-ui
+      clientName: Keycloak
+      # OIDC issuer: https://<keycloak-host>/realms/<realm>
+      issuerUri: ""
+      scope: openid
+      # Secret holding the Keycloak-generated client secret (secretKeyRef).
+      existingSecret: kafka-ui-oauth
+      clientSecretKey: client-secret
   service:
     type: ClusterIP
     port: 8080

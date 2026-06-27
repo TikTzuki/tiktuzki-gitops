@@ -41,6 +41,17 @@ external:
 kafkaUi:
   enabled: true
   clusterName: kafka-dev
+  # SSO via Keycloak. Create the OIDC client first (see deploy notes) and a kafka-ui-oauth secret
+  # holding its client-secret. Set issuerUri to the realm you register the client in.
+  auth:
+    type: OAUTH2
+    oauth2:
+      clientId: kafka-ui
+      clientName: Keycloak
+      issuerUri: https://keycloak.tiktuzki.com/realms/master   # TODO: use your real realm
+      scope: openid
+      existingSecret: kafka-ui-oauth
+      clientSecretKey: client-secret
   ingress:
     enabled: true
     className: public
