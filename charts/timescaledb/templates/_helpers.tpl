@@ -85,6 +85,18 @@ Return TimescaleDB configuration ConfigMap name
 {{- end }}
 
 {{/*
+Name of the data PVC the StatefulSet mounts — the user-supplied existingClaim, or the
+standalone PVC this chart creates (see pvc.yaml).
+*/}}
+{{- define "timescaledb.pvcName" -}}
+{{- if .Values.persistence.existingClaim -}}
+{{- .Values.persistence.existingClaim -}}
+{{- else -}}
+{{- printf "%s-pvc" (include "timescaledb.fullname" .) -}}
+{{- end -}}
+{{- end }}
+
+{{/*
 Return TimescaleDB data directory
 */}}
 {{- define "timescaledb.dataDir" -}}
