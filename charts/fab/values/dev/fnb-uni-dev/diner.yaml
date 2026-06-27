@@ -52,7 +52,7 @@ env:
     APP_OTP_TTL: '120s'
 
     DATABASE_PASSWORD: 'P@ssword789'
-    DATABASE_URL: 'jdbc:postgresql://postgres-postgresql-ha-pgpool.database:5432/fnb-diner-uni-dev'
+    DATABASE_URL: 'jdbc:postgresql://timescaledb.database:5432/fnb-diner-uni-dev'
     DATABASE_USER: 'postgres'
 
     GRPC_CMS_CHANNEL_ADDRESS: 'static://fnb-cms.fnb-uni-dev:9090'

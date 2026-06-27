@@ -48,7 +48,7 @@ env:
     APPLICATION_DOMAIN_SERVER: 'https://api.tiktzuki.com/dev/fnb-cms'
 
     DATABASE_PASSWORD: 'P@ssword789'
-    DATABASE_URL: 'jdbc:postgresql://postgres-postgresql-hl.database:5432/fnb-cms-dev'
+    DATABASE_URL: 'jdbc:postgresql://timescaledb.database:5432/fnb-cms-dev'
     DATABASE_USER: 'postgres'
 
     JAEGER_ENABLED: 'true'

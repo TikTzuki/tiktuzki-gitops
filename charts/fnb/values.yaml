@@ -103,7 +103,7 @@ admin:
   terminationGracePeriodSeconds: ""
   lifecycleHooks: {}
   extraEnvVars:
-    DATABASE_URL: "jdbc:postgresql://postgres-postgresql.database.svc.cluster.local:5432/fnb-admin"
+    DATABASE_URL: "jdbc:postgresql://timescaledb.database.svc.cluster.local:5432/fnb-admin"
     DATABASE_USER: "postgres"
     DATABASE_PASSWORD: "P@ssword789"
   extraEnvVarsCM: ""

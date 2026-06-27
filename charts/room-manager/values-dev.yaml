@@ -18,13 +18,13 @@ config:
           include-stacktrace: on_param
           include-message: always
       r2dbc:
-        url: r2dbc:postgresql://postgres.database:5432/room_manager?currentSchema=prod
+        url: r2dbc:postgresql://timescaledb.database:5432/room_manager?currentSchema=prod
         username: postgres
         password: postgres
       flyway:
         enabled: true
         locations: classpath:db/migration
-        url: jdbc:postgresql://postgres.database:5432/room_manager?currentSchema=prod
+        url: jdbc:postgresql://timescaledb.database:5432/room_manager?currentSchema=prod
         user: postgres
       security:
         oauth2:
