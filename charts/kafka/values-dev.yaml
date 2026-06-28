@@ -50,7 +50,7 @@ kafkaUi:
     type: OAUTH2
     oauth2:
       provider: google
-      clientId: "596742570337-asvjj8n18ejkha8l23julahful47jnpi.apps.googleusercontent.com" # TODO: <id>.apps.googleusercontent.com
+      clientId: 596742570337-asvjj8n18ejkha8l23julahful47jnpi.apps.googleusercontent.com # TODO: <id>.apps.googleusercontent.com
       clientName: Google
       userNameAttribute: email
       scope: "openid,email,profile"
