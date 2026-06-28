@@ -9,6 +9,12 @@ auth:
 # TimescaleDB Configuration
 config:
   timescaledbTelemetry: "off"
+  # Enable logical decoding (logical replication / CDC, e.g. Debezium).
+  # NOTE: wal_level is postmaster-level — applying it requires a full pod RESTART, not a reload.
+  # max_wal_senders / max_replication_slots default to 10, which is enough for typical CDC.
+  extraConfig:
+    - "wal_level = logical"
+    - "max_replication_slots = 20"
 
 # Service configuration
 service:
