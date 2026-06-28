@@ -1,6 +1,9 @@
 # Development values for redis-sentinel (single-node homelab).
 
-replicaCount: 3
+# Single node: the one pod is always the writable master (no read-only replicas), so writes
+# via the :6379 service always succeed. On this single-physical-node cluster a 3-pod Sentinel
+# gave no real HA anyway. quorum MUST be 1 here (quorum must be <= replicaCount).
+replicaCount: 1
 
 redis:
   masterGroupName: mymaster
@@ -16,7 +19,7 @@ redis:
       memory: 128Mi
 
 sentinel:
-  quorum: 2
+  quorum: 1
   downAfterMilliseconds: 5000
   resources:
     limits:
