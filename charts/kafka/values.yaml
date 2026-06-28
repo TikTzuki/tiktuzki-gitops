@@ -138,15 +138,21 @@ kafkaUi:
       username: admin
       existingSecret: ""
       passwordKey: kafka-ui-password
-    # Used when type: OAUTH2. Register a confidential OIDC client in Keycloak with redirect URI:
-    #   https://<kafka-ui host>/login/oauth2/code/keycloak
+    # Used when type: OAUTH2. Register the redirect URI with the provider:
+    #   https://<kafka-ui host>/login/oauth2/code/<provider>
     oauth2:
-      clientId: kafka-ui
-      clientName: Keycloak
-      # OIDC issuer: https://<keycloak-host>/realms/<realm>
+      # OAuth2/OIDC provider: google (direct, no broker) | keycloak | oidc (generic).
+      provider: google
+      clientId: ""
+      clientName: Google
+      # Username claim: email for google; preferred_username for keycloak/oidc.
+      userNameAttribute: email
+      scope: "openid,email,profile"
+      # issuerUri: required for keycloak/oidc; leave empty for google (Spring has its endpoints built in).
       issuerUri: ""
-      scope: openid
-      # Secret holding the Keycloak-generated client secret (secretKeyRef).
+      # google only: restrict logins to this Google Workspace domain (empty = any Google account).
+      allowedDomain: ""
+      # Secret holding the OAuth client secret (secretKeyRef).
       existingSecret: kafka-ui-oauth
       clientSecretKey: client-secret
   service:

@@ -43,13 +43,19 @@ kafkaUi:
   clusterName: kafka-dev
   # SSO via Keycloak. Create the OIDC client first (see deploy notes) and a kafka-ui-oauth secret
   # holding its client-secret. Set issuerUri to the realm you register the client in.
+  # Sign in with Google directly (no Keycloak). Create an OAuth client in Google Cloud Console
+  # with redirect URI https://kafka-ui.tiktuzki.com/login/oauth2/code/google, then put its client
+  # secret in the kafka-ui-oauth secret (key client-secret). Set clientId below.
   auth:
     type: OAUTH2
     oauth2:
-      clientId: kafka-ui
-      clientName: Keycloak
-      issuerUri: https://keycloak.tiktuzki.com/realms/master   # TODO: use your real realm
-      scope: openid
+      provider: google
+      clientId: "596742570337-asvjj8n18ejkha8l23julahful47jnpi.apps.googleusercontent.com" # TODO: <id>.apps.googleusercontent.com
+      clientName: Google
+      userNameAttribute: email
+      scope: "openid,email,profile"
+      issuerUri: ""                # not needed for google
+      allowedDomain: ""            # optional: e.g. newera.inc to restrict to your Workspace
       existingSecret: kafka-ui-oauth
       clientSecretKey: client-secret
   ingress:
