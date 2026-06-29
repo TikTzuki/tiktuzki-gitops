@@ -191,7 +191,7 @@ database:
   ## @param database.urlProperties Additional database url properties
   urlProperties: ""
   ## @param database.name Database name (only used when not using embedded database)
-  name: keycloak
+  name: keycloak_dev
   ## @param database.username Database username (only used when not using embedded database)
   username: keycloak
   ## @param database.password Database password (only used when not using embedded database)
@@ -258,7 +258,7 @@ ingress:
   ## @param ingress.hosts[0].paths[0].path Path for Keycloak ingress
   ## @param ingress.hosts[0].paths[0].pathType Path type for Keycloak ingress
   hosts:
-    - host: keycloak.tiktuzki.com
+    - host: keycloak-dev.tiktuzki.com
       paths:
         - path: /
           pathType: Prefix
