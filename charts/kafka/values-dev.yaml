@@ -35,7 +35,10 @@ auth:
 external:
   enabled: true
   port: 9094
-  advertisedHost: ""
+  # Advertise the NetBird overlay address so external clients reconnect to a reachable host.
+  # Using the IP (not the hostname) avoids depending on client-side NetBird DNS resolution;
+  # works whether the client bootstraps via 100.66.97.47:9094 or node1.netbird.selfhosted:9094.
+  advertisedHost: "node1.netbird.selfhosted"
 
 # Kafka UI dashboard, exposed at kafka-ui.tiktuzki.com (NPM -> node1:80 -> public ingress).
 kafkaUi:
