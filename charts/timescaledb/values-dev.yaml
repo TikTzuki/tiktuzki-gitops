@@ -15,6 +15,7 @@ config:
   extraConfig:
     - "wal_level = logical"
     - "max_replication_slots = 20"
+    - "max_connections = 100"
 
 # Service configuration
 service:
