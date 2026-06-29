@@ -86,7 +86,7 @@ keycloak:
   ## @param keycloak.adminPassword Keycloak admin password
   adminPassword: ""
   ## @param keycloak.existingSecret Name of existing secret to use for Keycloak admin credentials
-  existingSecret: ""
+  existingSecret: "keycloak-secret"
   ## @param keycloak.secretKeys Secret keys for admin credentials
   secretKeys:
     adminPasswordKey: "admin-password"
