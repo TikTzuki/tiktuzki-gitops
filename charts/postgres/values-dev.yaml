@@ -4,7 +4,7 @@
 postgres:
   database: postgres
   username: postgres
-  existingSecret: database-secret
+  existingSecret: postgres-secret
   existingSecretPasswordKey: postgres-password
 
 # Persistence configuration
