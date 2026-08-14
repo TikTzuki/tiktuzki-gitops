@@ -1,0 +1,61 @@
+{{- if .Values.serviceAccount.create }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "tsha.serviceAccountName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "tsha.labels" . | nindent 4 }}
+  {{- with .Values.serviceAccount.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}
+{{- if .Values.rbac.create }}
+---
+# Patroni's DCS is the Kubernetes API itself — this is what replaces etcd from the compose
+# stack. The leader lock, the cluster config, and the failover/sync state all live in
+# ConfigMaps named <scope>-leader / <scope>-config / <scope>-failover / <scope>-sync, which
+# Patroni creates and updates itself. Hence create+patch+update on configmaps.
+#
+# The `pods` grant is not optional either: Patroni relabels its OWN pod `role: master` or
+# `role: replica` on every promotion and demotion. That label is what the primary/replica
+# Services select on, so without patch on pods the Services would never follow a failover.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "tsha.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "tsha.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["create", "get", "list", "patch", "update", "watch", "delete"]
+  - apiGroups: [""]
+    resources: ["endpoints"]
+    verbs: ["create", "get", "list", "patch", "update", "watch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "patch", "update", "watch"]
+  # Patroni creates the <scope>-config service in endpoints mode and reads services on start.
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["create", "get", "list", "patch", "update", "watch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "tsha.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "tsha.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "tsha.fullname" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "tsha.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

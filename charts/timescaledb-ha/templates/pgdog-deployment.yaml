@@ -1,0 +1,146 @@
+{{- if .Values.pgdog.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "tsha.pgdog.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "tsha.pgdog.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.pgdog.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "tsha.pgdog.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "tsha.pgdog.selectorLabels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/pgdog-configmap.yaml") . | sha256sum }}
+    spec:
+      initContainers:
+        # pgdog has NO environment-variable interpolation in its config files, so the two
+        # passwords it needs (the app role's, for backend connections, and its own admin
+        # console password) cannot be injected at runtime. Rendering them here from the Secret
+        # into an emptyDir is what keeps them out of the ConfigMap — and out of Git.
+        - name: render-config
+          image: "{{ .Values.pgdog.initImage.repository }}:{{ .Values.pgdog.initImage.tag }}"
+          imagePullPolicy: {{ .Values.pgdog.initImage.pullPolicy }}
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              cp /config/pgdog.toml /etc/pgdog/pgdog.toml
+              {{- if .Values.pgdog.admin.enabled }}
+
+              # Appended rather than templated into the ConfigMap so the password never exists
+              # in a non-Secret object. [admin] is the last section in the file, so appending is
+              # safe — keep it that way if you add sections to pgdog-configmap.yaml.
+              cat >> /etc/pgdog/pgdog.toml <<EOF
+
+              [admin]
+              name = "{{ .Values.pgdog.admin.database }}"
+              user = "{{ .Values.pgdog.admin.username }}"
+              password = "${PGDOG_ADMIN_PASSWORD}"
+              EOF
+              {{- end }}
+
+              # `name`/`password` are what the CLIENT presents to pgdog; pgdog reuses the same
+              # credentials for its own backend connections, so these roles must exist on the
+              # cluster — the post-init hook creates the app role, Patroni creates postgres.
+              # `database` matches the `name` of the [[databases]] entries, which is the cluster
+              # identifier, not necessarily the Postgres database name.
+              cat > /etc/pgdog/users.toml <<EOF
+              [[users]]
+              name = "{{ .Values.bootstrap.username }}"
+              password = "${APP_PASSWORD}"
+              database = "{{ .Values.bootstrap.database }}"
+
+              [[users]]
+              name = "{{ .Values.auth.superuserUsername }}"
+              password = "${SUPERUSER_PASSWORD}"
+              database = "{{ .Values.bootstrap.database }}"
+              EOF
+
+              # 0444, not 0400: this init container writes as root but pgdog may run as a
+              # different UID, and a 0400 root-owned file would make it fail to read its own
+              # users file. The emptyDir is visible only inside this pod, so world-readable
+              # here is not a wider exposure than the Secret already is.
+              chmod 0444 /etc/pgdog/users.toml /etc/pgdog/pgdog.toml
+          env:
+            - name: APP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "tsha.secretName" . }}
+                  key: {{ .Values.auth.secretKeys.appPasswordKey }}
+            - name: SUPERUSER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "tsha.secretName" . }}
+                  key: {{ .Values.auth.secretKeys.superuserPasswordKey }}
+            {{- if .Values.pgdog.admin.enabled }}
+            - name: PGDOG_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "tsha.secretName" . }}
+                  key: {{ .Values.pgdog.admin.passwordKey }}
+            {{- end }}
+          volumeMounts:
+            - name: config
+              mountPath: /config
+              readOnly: true
+            - name: rendered
+              mountPath: /etc/pgdog
+      containers:
+        - name: pgdog
+          image: "{{ .Values.pgdog.image.repository }}:{{ .Values.pgdog.image.tag }}"
+          imagePullPolicy: {{ .Values.pgdog.image.pullPolicy }}
+          # Paths are passed explicitly. pgdog defaults to the RELATIVE "pgdog.toml"/"users.toml"
+          # against its WorkingDir, so a config mounted anywhere else is never read and pgdog
+          # boots on defaults with only a WARN. That failure mode surfaces as an authentication
+          # error ("no user or database in config"), which sends you hunting the wrong bug.
+          #
+          # The image declares Cmd, not Entrypoint, so the binary has to be repeated here —
+          # `command` replaces Cmd wholesale.
+          command:
+            - /usr/local/bin/pgdog
+            - --config
+            - /etc/pgdog/pgdog.toml
+            - --users
+            - /etc/pgdog/users.toml
+          ports:
+            - name: pgdog
+              containerPort: {{ .Values.pgdog.port }}
+            - name: metrics
+              containerPort: {{ .Values.pgdog.metricsPort }}
+          # A TCP probe, not a query: pgdog answers the Postgres wire protocol on :6432 whether
+          # or not any backend is reachable, so an HTTP/SQL probe here would conflate "pgdog is
+          # down" with "the database is down" and restart the pooler during a failover.
+          readinessProbe:
+            tcpSocket:
+              port: pgdog
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: pgdog
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            failureThreshold: 3
+          {{- with .Values.pgdog.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: rendered
+              mountPath: /etc/pgdog
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "tsha.pgdog.fullname" . }}
+        # emptyDir, not a Secret volume: the rendered files are assembled from two sources and
+        # only ever exist for this pod's lifetime.
+        - name: rendered
+          emptyDir: {}
+{{- end }}

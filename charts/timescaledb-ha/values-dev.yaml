@@ -1,0 +1,74 @@
+# Development values for timescaledb-ha (microk8s, single node `node1`).
+
+replicaCount: 3
+
+auth:
+  existingSecret: "timescaledb-ha-secret"
+
+bootstrap:
+  database: app
+  username: app
+  createExtension: true
+  # One schema per service, mirroring the compose stack's schema-per-service layout. Add to
+  # this list BEFORE the first install — post_init runs once and never again.
+  schemas: []
+
+patroni:
+  # Homelab: trade some safety for a visibly faster failover. Patroni enforces
+  # ttl >= loop_wait + 2 * retry_timeout, so 20 >= 5 + 2*5 holds exactly.
+  ttl: 20
+  loopWait: 5
+  retryTimeout: 5
+  parameters:
+    shared_preload_libraries: "timescaledb"
+    timescaledb.telemetry_level: "off"
+    # Carried over from the single-node chart's values-dev.yaml — Debezium/CDC needs these.
+    wal_level: "logical"
+    max_replication_slots: "20"
+    max_wal_senders: "20"
+    max_connections: "300"
+    hot_standby: "on"
+    wal_log_hints: "on"
+
+persistence:
+  enabled: true
+  size: 20Gi
+  useLocalVolume: true
+  # Create these on node1 before installing, one per replica:
+  #   sudo mkdir -p /home/tik/data/timescaledb-ha/{0,1,2}
+  #   sudo chown -R 1000:1000 /home/tik/data/timescaledb-ha
+  localPath: /home/tik/data/timescaledb-ha
+  storageClass: timescaledb-ha-local
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - node1
+
+# 3 × (500m / 1Gi) requests on top of what node1 already runs (~1.9 CPU / 3.5Gi of 16 CPU /
+# 15Gi). Comfortable on requests; the limits are what to watch if more services land here.
+resources:
+  requests:
+    cpu: 500m
+    memory: 1Gi
+  limits:
+    cpu: "1"
+    memory: 2Gi
+
+# Soft — see values.yaml. There is only one node, so a hard rule would leave two pods Pending.
+podAntiAffinity:
+  enabled: true
+  type: soft
+
+pgdog:
+  enabled: true
+  # include_primary maximises throughput but allows stale reads across transactions. Switch to
+  # prefer_primary before pointing anything transactional at this.
+  readWriteSplit: include_primary
+  defaultPoolSize: 25
+
+haproxy:
+  enabled: true

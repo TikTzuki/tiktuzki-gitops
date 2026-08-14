@@ -1,0 +1,50 @@
+{{ .Chart.Name }} {{ .Chart.Version }} — TimescaleDB {{ .Chart.AppVersion }}, {{ .Values.replicaCount }} Patroni nodes in {{ .Release.Namespace }}.
+
+Endpoints
+─────────
+{{- if .Values.pgdog.enabled }}
+  Applications      {{ include "tsha.pgdog.fullname" . }}:{{ .Values.pgdog.port }}
+                    user {{ .Values.bootstrap.username }}, database {{ .Values.bootstrap.database }}
+{{- if .Values.pgdog.admin.enabled }}
+  pgdog console     psql -h {{ include "tsha.pgdog.fullname" . }} -p {{ .Values.pgdog.port }} -U {{ .Values.pgdog.admin.username }} -d {{ .Values.pgdog.admin.database }}
+                    SHOW SERVERS; SHOW POOLS; SHOW REPLICATION; SHOW CLIENTS; RELOAD;
+{{- end }}
+  pgdog metrics     {{ include "tsha.pgdog.fullname" . }}:{{ .Values.pgdog.metricsPort }}/metrics
+{{- end }}
+{{- if .Values.haproxy.enabled }}
+  Debezium / CDC    {{ include "tsha.haproxy.fullname" . }}:{{ .Values.haproxy.primaryPort }}   (leader only, TCP passthrough)
+  Read-only bypass  {{ include "tsha.haproxy.fullname" . }}:{{ .Values.haproxy.replicaPort }}   (replicas only)
+  HAProxy stats     {{ include "tsha.haproxy.fullname" . }}:{{ .Values.haproxy.statsPort }}/  (and /metrics)
+{{- end }}
+{{- if .Values.service.primary.enabled }}
+  Direct to leader  {{ include "tsha.fullname" . }}-primary:{{ .Values.service.primary.port }}   (no proxy)
+{{- end }}
+
+Check it came up
+────────────────
+  kubectl -n {{ .Release.Namespace }} exec -it {{ include "tsha.fullname" . }}-0 -- patronictl list
+  kubectl -n {{ .Release.Namespace }} get pods -l cluster-name={{ .Values.scope }} -L role
+
+The `role` column is Patroni's own label — exactly one pod should show `master`. That label is
+what the -primary / -replica Services select on, so if it is empty the Services have no
+endpoints and Patroni has not finished electing.
+{{- if .Values.pgdog.enabled }}
+
+⚠️  pgdog serves stale reads by design
+────────────────────────────────────
+read_write_split is "{{ .Values.pgdog.readWriteSplit }}".
+{{- if eq .Values.pgdog.readWriteSplit "include_primary" }}
+Replication is asynchronous, so a read in a SEPARATE transaction right after a write can land
+on a replica that has not replayed it. Reads inside the writing transaction are safe. For any
+service where a stale read is a correctness bug — idempotency probes, saga state,
+read-after-migrate — set pgdog.readWriteSplit=prefer_primary.
+{{- end }}
+{{- end }}
+{{- if not .Values.podAntiAffinity.enabled }}
+
+⚠️  podAntiAffinity is disabled — nothing stops all {{ .Values.replicaCount }} nodes landing on one machine.
+{{- else if eq .Values.podAntiAffinity.type "soft" }}
+
+⚠️  podAntiAffinity is "soft". On a single-node cluster all {{ .Values.replicaCount }} nodes run on that node:
+    you get process-level failover to rehearse against, not survival of node loss.
+{{- end }}

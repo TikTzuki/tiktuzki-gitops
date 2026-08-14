@@ -1,0 +1,72 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "tsha.headlessServiceName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "tsha.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  # ⚠️ Load-bearing. Patroni pods find each other through this DNS record, and none of them is
+  # Ready until the cluster has a leader — which cannot happen until they can reach each other.
+  # Leave this false and a fresh install deadlocks: every pod sits in "waiting for leader to
+  # bootstrap" with an empty peer list.
+  publishNotReadyAddresses: true
+  selector:
+    {{- include "tsha.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: postgresql
+      port: 5432
+      targetPort: postgresql
+    - name: patroni
+      port: {{ .Values.service.restApiPort }}
+      targetPort: patroni
+{{- if .Values.service.primary.enabled }}
+---
+# Always the current leader. Patroni relabels its own pod `role: master` the instant it
+# promotes, so this selector follows a failover with no extra machinery.
+#
+# What it does NOT do: sever connections to a node that just stopped being primary. Removing a
+# pod from Endpoints leaves ESTABLISHED sockets alone. That is the gap the HAProxy primary
+# listener fills — use HAProxy for Debezium and anything else that must not keep talking to a
+# demoted node.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "tsha.fullname" . }}-primary
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "tsha.labels" . | nindent 4 }}
+    app.kubernetes.io/component: primary
+spec:
+  type: {{ .Values.service.primary.type }}
+  selector:
+    {{- include "tsha.selectorLabels" . | nindent 4 }}
+    role: master
+  ports:
+    - name: postgresql
+      port: {{ .Values.service.primary.port }}
+      targetPort: postgresql
+{{- end }}
+{{- if .Values.service.replica.enabled }}
+---
+# Round-robins across streaming replicas only. Read-only by definition — a write here fails
+# with "cannot execute INSERT in a read-only transaction", which is the correct outcome.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "tsha.fullname" . }}-replica
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "tsha.labels" . | nindent 4 }}
+    app.kubernetes.io/component: replica
+spec:
+  type: {{ .Values.service.replica.type }}
+  selector:
+    {{- include "tsha.selectorLabels" . | nindent 4 }}
+    role: replica
+  ports:
+    - name: postgresql
+      port: {{ .Values.service.replica.port }}
+      targetPort: postgresql
+{{- end }}

@@ -1,0 +1,83 @@
+{{- if .Values.haproxy.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "tsha.haproxy.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "tsha.haproxy.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.haproxy.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "tsha.haproxy.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "tsha.haproxy.selectorLabels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/haproxy-configmap.yaml") . | sha256sum }}
+    spec:
+      containers:
+        - name: haproxy
+          image: "{{ .Values.haproxy.image.repository }}:{{ .Values.haproxy.image.tag }}"
+          imagePullPolicy: {{ .Values.haproxy.image.pullPolicy }}
+          ports:
+            - name: primary
+              containerPort: {{ .Values.haproxy.primaryPort }}
+            - name: replica
+              containerPort: {{ .Values.haproxy.replicaPort }}
+            - name: stats
+              containerPort: {{ .Values.haproxy.statsPort }}
+          # Probe the stats listener, not the TCP proxies. The proxy ports accept connections
+          # even when every backend is down, so probing them would report healthy during a
+          # total outage — and, worse, a probe against `listen primary` opens and drops a real
+          # backend connection on every check.
+          readinessProbe:
+            httpGet:
+              path: /
+              port: stats
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: stats
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          {{- with .Values.haproxy.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: config
+              mountPath: /usr/local/etc/haproxy/haproxy.cfg
+              subPath: haproxy.cfg
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "tsha.haproxy.fullname" . }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "tsha.haproxy.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "tsha.haproxy.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.haproxy.service.type }}
+  selector:
+    {{- include "tsha.haproxy.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: primary
+      port: {{ .Values.haproxy.primaryPort }}
+      targetPort: primary
+    - name: replica
+      port: {{ .Values.haproxy.replicaPort }}
+      targetPort: replica
+    - name: stats
+      port: {{ .Values.haproxy.statsPort }}
+      targetPort: stats
+{{- end }}

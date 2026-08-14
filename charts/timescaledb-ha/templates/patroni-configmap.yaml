@@ -1,0 +1,107 @@
+{{- $fullname := include "tsha.fullname" . -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $fullname }}-patroni
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "tsha.labels" . | nindent 4 }}
+data:
+  # The timescaledb-ha image's entrypoint is literally `patroni /etc/timescaledb/patroni.yaml`,
+  # so this file IS the container's command line. Everything per-pod (node name, connect
+  # addresses, passwords) is injected as PATRONI_* environment variables instead, because
+  # Patroni env vars override the file — see statefulset.yaml.
+  patroni.yaml: |
+    # scope/name come from PATRONI_SCOPE / PATRONI_NAME in the pod env.
+
+    restapi:
+      listen: 0.0.0.0:{{ .Values.service.restApiPort }}
+
+    # ─── DCS: the Kubernetes API, not etcd ──────────────────────────────────────────
+    # This is the single biggest difference from the compose stack. There, a one-node etcd
+    # held the leader lock and was an admitted SPOF. Here the leader lock is a ConfigMap
+    # ({{ .Values.scope }}-leader) in this namespace, so the control plane is whatever
+    # etcd the cluster already runs — nothing extra to deploy, back up, or lose.
+    kubernetes:
+      # ConfigMaps rather than Endpoints. Endpoints mode needs a selector-less Service whose
+      # Endpoints object Patroni owns, and the endpoint controller will silently fight you for
+      # it if the Service ever grows a selector. ConfigMaps have no such failure mode.
+      use_endpoints: false
+      # The label Patroni filters on to find its peers. Must match the `cluster-name` label
+      # the StatefulSet stamps on every pod (see tsha.selectorLabels).
+      scope_label: cluster-name
+      labels:
+        cluster-name: {{ .Values.scope }}
+      # Patroni rewrites this label on its own pod at every promotion/demotion, and the
+      # primary/replica Services select on it. Pinned explicitly rather than left to default
+      # because the default leader value changed between Patroni majors (master -> primary) —
+      # inheriting it would silently break the Services on an image bump.
+      role_label: role
+      leader_label_value: master
+      follower_label_value: replica
+      standby_leader_label_value: master
+      # While a pod is starting or not a valid endpoint, Patroni parks it under this label
+      # instead of `role`, which keeps it out of both Services.
+      tmp_role_label: noloadbalance
+
+    # ─── bootstrap: applied ONCE, by whichever node wins the initial race ────────────
+    # Everything under `dcs` is copied into the {{ .Values.scope }}-config ConfigMap at that
+    # moment and is Patroni's property from then on. Editing values.yaml afterwards changes
+    # this file but NOT the running cluster — use `patronictl edit-config`.
+    bootstrap:
+      # Runs on the leader only, right after initdb, with the superuser conn string as $1.
+      # Replicas are cloned with pg_basebackup, so its effects replicate automatically.
+      post_init: /etc/patroni/scripts/post-init.sh
+      dcs:
+        # Leader-lease TTL dominates failover time — most of the measured 27s kill-to-recovery
+        # on the compose stack was spent waiting for this lease to expire.
+        # Patroni enforces: ttl >= loop_wait + 2 * retry_timeout.
+        ttl: {{ .Values.patroni.ttl }}
+        loop_wait: {{ .Values.patroni.loopWait }}
+        retry_timeout: {{ .Values.patroni.retryTimeout }}
+        # int64, not the raw value: Helm renders a bare 33554432 as 3.3554432e+07, which
+        # Patroni reads as a float and rejects.
+        maximum_lag_on_failover: {{ .Values.patroni.maximumLagOnFailover | int64 }}
+        {{- if .Values.patroni.synchronousMode }}
+        synchronous_mode: true
+        synchronous_mode_strict: {{ .Values.patroni.synchronousModeStrict }}
+        {{- end }}
+        postgresql:
+          use_pg_rewind: true
+          # Replication slots, so a replica that falls behind can still catch up instead of
+          # needing a full re-clone. Patroni manages slot lifecycle across failovers.
+          use_slots: true
+          parameters:
+            {{- range $k, $v := .Values.patroni.parameters }}
+            {{ $k }}: {{ $v | quote }}
+            {{- end }}
+          pg_hba:
+            {{- range .Values.patroni.pgHba }}
+            - {{ . | quote }}
+            {{- end }}
+      initdb:
+        - encoding: UTF8
+        - locale: C.UTF-8
+        # Cheap on modern hardware and the only way corruption gets noticed before it
+        # replicates to every node.
+        - data-checksums
+        - auth-host: scram-sha-256
+        - auth-local: trust
+
+    postgresql:
+      # patronictl and the post-init hook connect over the unix socket, which `local all all
+      # trust` in pg_hba admits without a password.
+      use_unix_socket: true
+      pgpass: /tmp/pgpass
+      basebackup:
+        # Cap the clone's bandwidth so re-seeding a replica does not starve the leader's WAL
+        # shipping on a shared node.
+        - max-rate: 100M
+        - checkpoint: fast
+
+    # Prevents a pod that was cordoned/drained from being auto-failed-over into.
+    tags:
+      nofailover: false
+      noloadbalance: false
+      clonefrom: false
+      nosync: false

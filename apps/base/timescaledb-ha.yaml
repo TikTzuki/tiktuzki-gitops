@@ -1,0 +1,36 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: timescaledb-ha
+  namespace: devops
+spec:
+  destination:
+    namespace: database
+    server: https://kubernetes.default.svc
+  source:
+    repoURL: git@github.com:TikTzuki/tiktuzki-gitops.git
+    targetRevision: main
+    path: charts/timescaledb-ha
+    helm:
+      # Release name is pinned so the StatefulSet is `timescaledb-ha` and the pod DNS names
+      # baked into pgdog.toml and haproxy.cfg stay short and predictable.
+      releaseName: timescaledb-ha
+      valueFiles:
+        - values-dev.yaml
+  project: default
+  syncPolicy:
+    automated:
+      prune: true
+      # ⚠️ selfHeal fights Patroni over the `role` label — Patroni patches its own pod on every
+      # promotion, and Argo has no opinion about pod labels, so this is safe as written. It is
+      # NOT safe if you ever add pod labels to the chart that Patroni also manages.
+      selfHeal: true
+    syncOptions:
+      # The `database` namespace already exists (see the other apps/base manifests).
+      - CreateNamespace=false
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        maxDuration: 3m0s
+        factor: 2

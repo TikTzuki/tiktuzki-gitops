@@ -1,0 +1,83 @@
+{{- if .Values.pgdog.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "tsha.pgdog.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "tsha.pgdog.labels" . | nindent 4 }}
+data:
+  # Everything here is non-secret and safe to read in `kubectl get cm -o yaml`. The two files
+  # pgdog actually reads are assembled by the init container in pgdog-deployment.yaml, which
+  # appends the [admin] password and writes users.toml from the Secret — neither password ever
+  # lands in a ConfigMap.
+  pgdog.toml: |
+    # pgdog — connection pooler + read/write split in front of the Patroni cluster.
+    #
+    # All {{ .Values.replicaCount }} nodes are listed with role = "auto": pgdog polls each
+    # host's pg_is_in_recovery() and routes writes to whichever one answers false. Patroni does
+    # the actual promotion — pgdog never calls pg_promote(), it only follows.
+
+    [general]
+    host = "0.0.0.0"
+    port = {{ .Values.pgdog.port }}
+    workers = {{ .Values.pgdog.workers }}
+
+    pooler_mode = "{{ .Values.pgdog.poolerMode }}"
+    default_pool_size = {{ .Values.pgdog.defaultPoolSize }}
+    min_pool_size = {{ .Values.pgdog.minPoolSize }}
+
+    # ─── Read/write split ────────────────────────────────────────────────────────────
+    # Replicas are ASYNCHRONOUS. A read in a separate transaction right after a write can be
+    # served by a replica that has not replayed it — measured 9 stale reads in 15 rounds on the
+    # equivalent compose stack. Reads inside the writing transaction are safe (pgdog pins a
+    # transaction to one server). Use prefer_primary for any service where a stale read is a
+    # correctness bug: idempotency probes, saga state, read-after-migrate.
+    read_write_split = "{{ .Values.pgdog.readWriteSplit }}"
+
+    # round_robin, not the least_active_connections default: at low concurrency every pool is
+    # idle, the tie always breaks the same way, and every test read lands on one node.
+    load_balancing_strategy = "{{ .Values.pgdog.loadBalancingStrategy }}"
+
+    # Failure detection, dialled well below upstream defaults (30s/300s) so a pod kill shows up
+    # in seconds rather than minutes.
+    healthcheck_interval = {{ .Values.pgdog.healthcheckInterval }}
+    healthcheck_timeout = {{ .Values.pgdog.healthcheckTimeout }}
+    idle_healthcheck_interval = {{ .Values.pgdog.idleHealthcheckInterval }}
+    ban_timeout = {{ .Values.pgdog.banTimeout }}
+
+    # ─── The setting that makes role = "auto" actually work ──────────────────────────
+    # lsn_check_delay defaults to `infinity`, i.e. the role poll never runs. Leave it at the
+    # default and pgdog keeps sending writes to the OLD primary after a Patroni failover until
+    # something restarts it. A finite value is mandatory for this topology.
+    lsn_check_delay = {{ .Values.pgdog.lsnCheckDelay }}
+    lsn_check_interval = {{ .Values.pgdog.lsnCheckInterval }}
+
+    # Ban a replica that falls this far behind rather than letting it serve stale reads.
+    # Self-heals as soon as it catches up.
+    #
+    # Deliberately BYTES-only. The time-based twin (ban_replica_lag) is measured as
+    # now() - pg_last_xact_replay_timestamp() whenever pgdog cannot match LSNs — exactly the
+    # situation on a freshly started or idle cluster. Setting it bans every replica on startup
+    # and again any time the cluster goes quiet.
+    # int64, not the raw value: Helm renders a bare 16777216 as 1.6777216e+07, which is a TOML
+    # float — pgdog fails to parse its own config and exits before serving anything.
+    ban_replica_lag_bytes = {{ .Values.pgdog.banReplicaLagBytes | int64 }}
+
+    prepared_statements = "{{ .Values.pgdog.preparedStatements }}"
+    openmetrics_port = {{ .Values.pgdog.metricsPort }}
+
+    # ─── Cluster members ─────────────────────────────────────────────────────────────
+    # Same `name` on every entry = one logical cluster that clients connect to as database
+    # "{{ .Values.bootstrap.database }}". Addresses are the StatefulSet's stable pod DNS names,
+    # NOT a Service — pgdog has to reach each node individually to poll its role.
+    {{- range $i := until (int .Values.replicaCount) }}
+
+    [[databases]]
+    name = "{{ $.Values.bootstrap.database }}"
+    host = "{{ include "tsha.fullname" $ }}-{{ $i }}.{{ include "tsha.headlessServiceName" $ }}.{{ $.Release.Namespace }}.svc.cluster.local"
+    port = 5432
+    role = "auto"
+    database_name = "{{ $.Values.bootstrap.database }}"
+    {{- end }}
+{{- end }}

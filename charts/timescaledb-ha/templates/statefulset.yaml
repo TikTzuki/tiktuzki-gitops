@@ -1,0 +1,226 @@
+{{- $fullname := include "tsha.fullname" . -}}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $fullname }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "tsha.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ include "tsha.headlessServiceName" . }}
+  replicas: {{ .Values.replicaCount }}
+  # Parallel, NOT the OrderedReady default. Ordered startup deadlocks a Patroni cluster on any
+  # full restart: pod-0 will not go Ready until it joins a cluster that has a leader, and the
+  # node that would win the election is pod-1 or pod-2, which OrderedReady refuses to start
+  # until pod-0 is Ready. Patroni does its own ordering through the leader lock.
+  podManagementPolicy: Parallel
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      {{- include "tsha.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "tsha.selectorLabels" . | nindent 8 }}
+      annotations:
+        # Restart the pods when the Patroni config or bootstrap hook changes. Note this only
+        # re-reads patroni.yaml — parameters already copied into the DCS at bootstrap are
+        # unaffected (see README "Changing postgresql.conf after bootstrap").
+        checksum/patroni-config: {{ include (print $.Template.BasePath "/patroni-configmap.yaml") . | sha256sum }}
+        checksum/bootstrap: {{ include (print $.Template.BasePath "/bootstrap-configmap.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "tsha.serviceAccountName" . }}
+      # Postgres needs to finish its shutdown checkpoint. The 30s default SIGKILLs mid-flush,
+      # which turns every rolling update into a crash recovery on the next start.
+      terminationGracePeriodSeconds: 120
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.podAntiAffinity.enabled }}
+      affinity:
+        podAntiAffinity:
+          {{- if eq .Values.podAntiAffinity.type "hard" }}
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  {{- include "tsha.selectorLabels" . | nindent 18 }}
+          {{- else }}
+          # Soft on purpose: a hard rule on a single-node cluster leaves replicas 1 and 2
+          # Pending forever. Flip to `hard` the moment there is a second node — until then
+          # "3 replicas" buys process-level failover, not node-loss survival.
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    {{- include "tsha.selectorLabels" . | nindent 20 }}
+          {{- end }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: timescaledb
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          # The image's own entrypoint is `patroni /etc/timescaledb/patroni.yaml`. Pointing at
+          # our own path instead of overmounting theirs keeps the image's /etc/timescaledb
+          # intact and makes it obvious which file is actually in play.
+          command:
+            - patroni
+            - /etc/patroni/patroni.yaml
+          ports:
+            - name: postgresql
+              containerPort: 5432
+            - name: patroni
+              containerPort: {{ .Values.service.restApiPort }}
+          env:
+            # Declared first: Kubernetes only expands $(VAR) against variables defined EARLIER
+            # in this list, and the connect addresses below depend on POD_NAME.
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            # PATRONI_* env vars OVERRIDE patroni.yaml. Everything per-pod lives here; only
+            # cluster-wide settings live in the ConfigMap.
+            - name: PATRONI_NAME
+              value: "$(POD_NAME)"
+            - name: PATRONI_SCOPE
+              value: {{ .Values.scope | quote }}
+            - name: PATRONI_KUBERNETES_NAMESPACE
+              value: "$(POD_NAMESPACE)"
+            - name: PATRONI_KUBERNETES_POD_IP
+              value: "$(POD_IP)"
+            # Stable pod DNS, not the pod IP: this is the address replicas put in
+            # primary_conninfo and the address the REST healthchecks resolve. A pod IP would
+            # be stale the first time a pod is rescheduled.
+            - name: PATRONI_RESTAPI_CONNECT_ADDRESS
+              value: "$(POD_NAME).{{ include "tsha.headlessServiceName" . }}.$(POD_NAMESPACE).svc.cluster.local:{{ .Values.service.restApiPort }}"
+            - name: PATRONI_RESTAPI_LISTEN
+              value: "0.0.0.0:{{ .Values.service.restApiPort }}"
+            - name: PATRONI_POSTGRESQL_CONNECT_ADDRESS
+              value: "$(POD_NAME).{{ include "tsha.headlessServiceName" . }}.$(POD_NAMESPACE).svc.cluster.local:5432"
+            - name: PATRONI_POSTGRESQL_LISTEN
+              value: "0.0.0.0:5432"
+            - name: PATRONI_POSTGRESQL_DATA_DIR
+              value: {{ .Values.dataDir | quote }}
+            - name: PATRONI_POSTGRESQL_PGPASS
+              value: /tmp/pgpass
+            - name: PATRONI_SUPERUSER_USERNAME
+              value: {{ .Values.auth.superuserUsername | quote }}
+            - name: PATRONI_SUPERUSER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "tsha.secretName" . }}
+                  key: {{ .Values.auth.secretKeys.superuserPasswordKey }}
+            - name: PATRONI_REPLICATION_USERNAME
+              value: {{ .Values.auth.replicationUsername | quote }}
+            - name: PATRONI_REPLICATION_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "tsha.secretName" . }}
+                  key: {{ .Values.auth.secretKeys.replicationPasswordKey }}
+            # Consumed by the post-init hook, which runs as a child of Patroni and inherits
+            # this environment.
+            - name: APP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "tsha.secretName" . }}
+                  key: {{ .Values.auth.secretKeys.appPasswordKey }}
+          # /liveness is 200 whenever the Patroni process itself is healthy — deliberately NOT
+          # /readiness, which is 503 on a node that is up but not yet streaming. Using
+          # /readiness here would have Kubernetes kill replicas mid-catch-up, forever.
+          livenessProbe:
+            httpGet:
+              path: /liveness
+              port: patroni
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          # /readiness is 200 only on the leader or a streaming replica, which is exactly the
+          # condition for "safe to send queries to".
+          readinessProbe:
+            httpGet:
+              path: /readiness
+              port: patroni
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          # Generous: a first bootstrap has to initdb, and a re-joining replica may need a full
+          # pg_basebackup clone before it answers anything.
+          startupProbe:
+            httpGet:
+              path: /liveness
+              port: patroni
+            periodSeconds: 10
+            failureThreshold: 60
+          {{- with .Values.containerSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: data
+              mountPath: {{ .Values.persistence.mountPath }}
+            - name: patroni-config
+              mountPath: /etc/patroni/patroni.yaml
+              subPath: patroni.yaml
+              readOnly: true
+            - name: bootstrap
+              mountPath: /etc/patroni/scripts
+              readOnly: true
+            # Patroni writes .pgpass and assorted scratch files; the rest of the filesystem can
+            # stay read-only-ish without them.
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: patroni-config
+          configMap:
+            name: {{ $fullname }}-patroni
+        - name: bootstrap
+          configMap:
+            name: {{ $fullname }}-bootstrap
+            # 0755: Patroni execs post-init.sh directly. A ConfigMap's 0644 default makes the
+            # bootstrap fail with "Permission denied" AFTER initdb has already run, which
+            # leaves a half-initialised cluster that has to be wiped.
+            defaultMode: 0755
+        - name: tmp
+          emptyDir: {}
+  {{- if .Values.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          {{- range .Values.persistence.accessModes }}
+          - {{ . | quote }}
+          {{- end }}
+        {{- if .Values.persistence.storageClass }}
+        storageClassName: {{ .Values.persistence.storageClass | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.persistence.size }}
+  {{- end }}

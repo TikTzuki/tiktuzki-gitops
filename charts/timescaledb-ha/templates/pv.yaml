@@ -1,0 +1,54 @@
+{{- if and .Values.persistence.enabled .Values.persistence.useLocalVolume }}
+{{- /*
+This cluster has no StorageClass at all (`kubectl get sc` is empty), so nothing would
+dynamically provision the StatefulSet's volumeClaimTemplates. One static local PV per replica
+closes that gap: the claims bind by storageClassName + size + accessMode, and the ordinal in
+each path keeps two nodes from ever sharing a data directory.
+
+The directories must already exist on the node, owned by the image's postgres UID:
+
+    sudo mkdir -p {{ .Values.persistence.localPath }}/{0..{{ sub (int .Values.replicaCount) 1 }}}
+    sudo chown -R 1000:1000 {{ .Values.persistence.localPath }}
+
+`local` rather than `hostPath` on purpose: local PVs honour nodeAffinity, so the scheduler
+knows the volume pins the pod to node1 instead of discovering it after a failed mount.
+
+Reclaim policy is Retain — a `helm uninstall` must never be able to delete a database.
+*/ -}}
+{{- range $i := until (int .Values.replicaCount) }}
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  # Must match nothing in particular, but the ordinal keeps it obvious which claim binds here:
+  # the claim is data-{{ include "tsha.fullname" $ }}-{{ $i }}.
+  name: {{ include "tsha.fullname" $ }}-pv-{{ $i }}
+  labels:
+    {{- include "tsha.labels" $ | nindent 4 }}
+spec:
+  capacity:
+    storage: {{ $.Values.persistence.size }}
+  volumeMode: Filesystem
+  accessModes:
+    {{- range $.Values.persistence.accessModes }}
+    - {{ . | quote }}
+    {{- end }}
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: {{ $.Values.persistence.storageClass | quote }}
+  # Pre-bound to one specific claim. Without this the binder matches any of the N identical
+  # PVs to any of the N claims, so after a delete-and-recreate pod-0 can come up on the
+  # directory that used to be pod-1's PGDATA — a data dir whose Patroni member name no longer
+  # matches the pod. claimRef makes ordinal N always get path N.
+  claimRef:
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+    namespace: {{ $.Release.Namespace }}
+    name: data-{{ include "tsha.fullname" $ }}-{{ $i }}
+  local:
+    path: {{ $.Values.persistence.localPath }}/{{ $i }}
+  {{- with $.Values.persistence.nodeAffinity }}
+  nodeAffinity:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}
+{{- end }}

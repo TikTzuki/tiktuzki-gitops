@@ -1,0 +1,37 @@
+apiVersion: v2
+name: timescaledb-ha
+description: TimescaleDB HA — Patroni-managed cluster behind pgdog (pooling + read/write split) and HAProxy (leader-pinned TCP)
+
+# Three TimescaleDB nodes under Patroni (automatic leader election and promotion), fronted by
+# two different proxies with two different jobs:
+#
+#   pgdog   :6432  — transaction pooling + read/write split. What applications connect to.
+#   HAProxy :5000  — raw TCP to whichever node is currently leader. For clients a
+#           :5001    transaction-mode pooler CANNOT serve: logical decoding (Debezium),
+#                    pg_basebackup, and anything speaking the streaming-replication protocol.
+#
+# Division of labour: Patroni elects and promotes. pgdog only FOLLOWS — it polls
+# pg_is_in_recovery() on each node (role = "auto") and re-points writes. HAProxy follows by
+# health-checking Patroni's REST /primary. Neither proxy ever calls pg_promote().
+#
+# Adapted from docker-compose.postgres-ha.yml in payment-platform-backend. Two things changed
+# in the port to Kubernetes — see README.md "What changed from the compose stack":
+#   - etcd is GONE. Patroni uses the Kubernetes API as its DCS, so the control plane is
+#     already replicated and there is no extra SPOF to run.
+#   - Spilo (Postgres 18 + Patroni) became timescale/timescaledb-ha, which ships TimescaleDB
+#     and Patroni in one image and is launched as `patroni /etc/timescaledb/patroni.yaml`.
+type: application
+
+# Bump on every chart change.
+version: 0.1.0
+
+# TimescaleDB version shipped (matches image.tag).
+appVersion: "2.29.1"
+
+keywords:
+  - timescaledb
+  - postgresql
+  - patroni
+  - high-availability
+  - pgdog
+  - haproxy

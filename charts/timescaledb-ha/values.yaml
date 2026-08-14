@@ -1,0 +1,333 @@
+# Default values for timescaledb-ha.
+# values-dev.yaml overrides the homelab-specific bits (storage paths, sizes, replica count).
+
+nameOverride: ""
+fullnameOverride: ""
+
+# ─── Cluster identity ────────────────────────────────────────────────────────────────
+# `scope` is Patroni's cluster name. It is the key under which the leader lock lives in the
+# DCS, and it is written into the ConfigMaps Patroni creates (<scope>-config, <scope>-leader,
+# <scope>-failover, <scope>-sync). Two clusters sharing a scope in one namespace will fight
+# over the same leader lock — keep it unique per release.
+scope: timescaledb-ha
+
+image:
+  # timescale/timescaledb-ha ships TimescaleDB + Patroni + pgBackRest in one image and its
+  # entrypoint is `patroni /etc/timescaledb/patroni.yaml` — which is why this chart supplies
+  # patroni.yaml via ConfigMap rather than driving the container through env vars alone.
+  #
+  # Tag format is pg<PG>-ts<TIMESCALE>[-all][-oss]. The -oss variants exclude the
+  # Timescale-licensed features (compression policies, continuous-aggregate refresh policies);
+  # -all adds PostGIS and the Toolkit. Pick deliberately — switching between them later is a
+  # dump/restore, not a rolling restart.
+  repository: timescale/timescaledb-ha
+  tag: "pg17.10-ts2.29.1-oss"
+  pullPolicy: IfNotPresent
+
+# Number of Patroni nodes. 3 is the smallest count that survives losing one node while still
+# holding a quorum-ish majority for synchronous replication.
+#
+# ⚠️ On a SINGLE-NODE cluster (this homelab) all three land on the same machine. That gives
+# you real *process* failover to rehearse against, but zero protection from node loss — the
+# node dying takes all three with it. Do not read "3 replicas" as "HA" here.
+replicaCount: 3
+
+# ─── Credentials ─────────────────────────────────────────────────────────────────────
+# Everything here comes from a Secret — nothing in this chart accepts an inline password,
+# because values files are committed. Seal the Secret with kubeseal (see infra/sealed-secrets).
+#
+# Required keys in the Secret:
+#   superuser-password    — the `postgres` role. Patroni creates it at bootstrap.
+#   replication-password  — the streaming-replication role Patroni uses to clone replicas.
+#   app-password          — the application role created by the post-init hook.
+auth:
+  existingSecret: "timescaledb-ha-secret"
+  secretKeys:
+    superuserPasswordKey: "superuser-password"
+    replicationPasswordKey: "replication-password"
+    appPasswordKey: "app-password"
+  superuserUsername: postgres
+  replicationUsername: standby
+
+# ─── Bootstrap (runs ONCE, on the first leader, right after initdb) ──────────────────
+# Replicas are cloned from the leader with pg_basebackup, so everything created here is
+# replicated automatically. Changing any of it later does NOT re-run the hook — you have to
+# apply the change by hand or wipe every PVC and re-bootstrap.
+bootstrap:
+  # The application database and the role that owns it. The role is granted pg_monitor so
+  # pgdog can poll pg_is_in_recovery() / pg_current_wal_lsn() as this user to track which node
+  # is primary — without it, role = "auto" cannot see the topology.
+  database: app
+  username: app
+  # One schema per service, mirroring the compose stack's layout. Empty list = just `public`.
+  schemas: []
+  # CREATE EXTENSION timescaledb in the application database. The extension is per-database,
+  # not per-cluster — a fresh database without this is plain Postgres.
+  createExtension: true
+  # Extra SQL appended to the post-init hook, run as superuser against the app database.
+  extraSQL: ""
+
+# ─── Patroni ─────────────────────────────────────────────────────────────────────────
+patroni:
+  # Leader-lease TTL dominates failover time — the compose stack measured 27s from kill to
+  # writes resuming, almost all of it waiting for this lease to expire. Lower ttl/loop_wait to
+  # trade safety for speed. Patroni enforces ttl >= loop_wait + 2*retry_timeout.
+  ttl: 30
+  loopWait: 10
+  retryTimeout: 10
+  # A replica lagging more than this many bytes is not a failover candidate.
+  maximumLagOnFailover: 33554432
+
+  # Synchronous replication. Off by default: it trades write latency (and availability, if no
+  # replica is caught up) for zero data loss on failover. Turn it on for anything financial.
+  synchronousMode: false
+  synchronousModeStrict: false
+
+  # postgresql.conf parameters applied at bootstrap and stored in the DCS.
+  #
+  # ⚠️ These are written to the DCS ONCE, at bootstrap. Editing this map afterwards has NO
+  # effect on a running cluster — Patroni owns the live values. To change them later:
+  #     kubectl exec -it <pod> -- patronictl edit-config
+  # See README.md "Changing postgresql.conf after bootstrap".
+  parameters:
+    shared_preload_libraries: "timescaledb"
+    timescaledb.telemetry_level: "off"
+    # Logical decoding, for Debezium/CDC via the HAProxy primary endpoint. wal_level is
+    # postmaster-level — changing it later needs a full restart of every node, not a reload.
+    wal_level: "logical"
+    max_replication_slots: "20"
+    max_wal_senders: "20"
+    # pgdog holds a pool per (user, node); keep headroom over
+    # pgdog.defaultPoolSize * replicaCount * users.
+    max_connections: "300"
+    hot_standby: "on"
+    wal_log_hints: "on"
+
+  # Rules appended to pg_hba.conf. scram-sha-256 everywhere over the pod network; `local` is
+  # trust so the post-init hook and patronictl can connect over the unix socket.
+  pgHba:
+    - "local all all trust"
+    - "host all all 127.0.0.1/32 trust"
+    - "host all all 0.0.0.0/0 scram-sha-256"
+    - "host replication standby 0.0.0.0/0 scram-sha-256"
+
+# ─── Persistence ─────────────────────────────────────────────────────────────────────
+# This cluster has NO StorageClass — every PV in it is created by hand (see `kubectl get sc`,
+# which returns nothing). So the chart creates one static local PV per replica and the
+# StatefulSet's volumeClaimTemplate binds to them by storageClassName.
+#
+# The directories must EXIST ON THE NODE before install, one per replica:
+#     sudo mkdir -p /home/tik/data/timescaledb-ha/{0,1,2}
+#     sudo chown -R 1000:1000 /home/tik/data/timescaledb-ha
+# UID 1000 is `postgres` inside the timescaledb-ha image; without the chown the pods
+# CrashLoop on "could not create directory ... Permission denied".
+persistence:
+  enabled: true
+  size: 20Gi
+  accessModes:
+    - ReadWriteOnce
+  # Create static local PVs (one per replica) instead of relying on dynamic provisioning.
+  useLocalVolume: true
+  # Per-replica path is <localPath>/<ordinal>.
+  localPath: /home/tik/data/timescaledb-ha
+  # A dedicated class name, not "": it is what pairs each volumeClaimTemplate with the PVs
+  # this chart creates, and keeps them from being grabbed by an unrelated claim.
+  storageClass: timescaledb-ha-local
+  # Where the PVC is mounted. PGDATA (dataDir below) is a SUBDIRECTORY of this, never the
+  # mount point itself — initdb refuses to run in a directory that already contains
+  # lost+found, and a subdirectory also lets Patroni own the permissions on it.
+  mountPath: /var/lib/postgresql/data
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - node1
+
+# PGDATA — a subdirectory of persistence.mountPath, never the mount point itself.
+dataDir: /var/lib/postgresql/data/pgdata
+
+# ─── Services for the Patroni pods ───────────────────────────────────────────────────
+# Patroni labels each pod `role: master` or `role: replica` and updates the label the moment
+# it promotes or demotes, so a plain Service selector is an always-current primary endpoint.
+# That is the idiomatic Kubernetes substitute for the compose stack's HAProxy — HAProxy is
+# still here (below) because it does one thing a Service cannot: kill established connections
+# to a node that stopped being primary.
+service:
+  # Direct-to-primary, bypassing both proxies. Useful for psql/patronictl and for clients that
+  # want the leader without HAProxy in the path.
+  primary:
+    enabled: true
+    type: ClusterIP
+    port: 5432
+  # Round-robins across replicas only.
+  replica:
+    enabled: true
+    type: ClusterIP
+    port: 5432
+  # Patroni's REST API — /health, /primary, /replica, /metrics.
+  restApiPort: 8008
+
+# ─── pgdog — pooling + read/write split. The address applications use ────────────────
+pgdog:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: ghcr.io/pgdogdev/pgdog
+    tag: "main"
+    pullPolicy: IfNotPresent
+  # Renders pgdog.toml + users.toml from the Secret at pod start. pgdog has no environment
+  # interpolation in its config files, so the passwords have to be written in by something.
+  # Any image with a POSIX shell works.
+  initImage:
+    repository: busybox
+    tag: "1.36"
+    pullPolicy: IfNotPresent
+  port: 6432
+  metricsPort: 9102
+  service:
+    type: ClusterIP
+
+  poolerMode: transaction
+  defaultPoolSize: 25
+  minPoolSize: 2
+  workers: 2
+
+  # ⚠️ READ THIS BEFORE POINTING A SERVICE AT pgdog.
+  # Replicas are asynchronous, so a read issued in a SEPARATE transaction right after a write
+  # can be served by a replica that has not replayed it yet. Measured on the compose stack
+  # under write load: 9 stale reads out of 15 write-then-read rounds. An idempotency probe, a
+  # saga state read, or a Flyway-migrate-then-query would all be exposed.
+  #
+  # Reads INSIDE the writing transaction are always safe — pgdog pins a transaction to one server.
+  #
+  #   include_primary  primary + replicas serve reads. Best throughput, stale reads possible.
+  #   prefer_primary   reads go to the primary unless it is gone. Read-your-writes safe.
+  #   exclude_primary  replicas only — useful to PROVE the split works (primary should show
+  #                    zero read traffic in SHOW SERVERS).
+  readWriteSplit: include_primary
+
+  # round_robin, not the least_active_connections default: at low concurrency every pool is
+  # idle, the tie always breaks the same way, and the compose stack sent 12/12 test reads to a
+  # single node. Round robin spread the same 12 reads 4/4/4.
+  loadBalancingStrategy: round_robin
+
+  # Failure detection. Upstream defaults (30s healthcheck / 300s ban) are tuned for a stable
+  # prod cluster; these are dialled down so a pod kill is visible in seconds.
+  healthcheckInterval: 2000
+  healthcheckTimeout: 2000
+  idleHealthcheckInterval: 2000
+  banTimeout: 15000
+
+  # ⚠️ The setting that makes role = "auto" actually work. lsn_check_delay defaults to
+  # `infinity`, i.e. the role poll NEVER RUNS — leave it at the default and pgdog keeps
+  # sending writes to the OLD primary after a Patroni failover until you restart it. A finite
+  # value is mandatory for this topology.
+  lsnCheckDelay: 1000
+  lsnCheckInterval: 2000
+
+  # Ban a replica more than 16MB behind rather than letting it serve stale reads. Unlike a
+  # healthcheck ban this self-heals as soon as the replica catches up.
+  #
+  # Deliberately BYTES-only. The time-based twin (ban_replica_lag) is measured as
+  # now() - pg_last_xact_replay_timestamp() whenever pgdog cannot match LSNs — exactly the
+  # situation on a freshly started or idle cluster, where the last replayed transaction is
+  # legitimately minutes old. Setting it bans both replicas on every pgdog start, and again
+  # any time the cluster goes quiet.
+  banReplicaLagBytes: 16777216
+
+  preparedStatements: extended
+
+  # pgdog's own admin console: psql -h <pgdog> -p 6432 -U admin -d admin
+  # Commands: SHOW SERVERS; SHOW POOLS; SHOW REPLICATION; SHOW CLIENTS; RELOAD;
+  # Without a password the admin database is locked out entirely. Key `pgdog-admin-password`
+  # in the same Secret as the database credentials.
+  admin:
+    enabled: true
+    username: admin
+    database: admin
+    passwordKey: "pgdog-admin-password"
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# ─── HAProxy — a stable "always the current primary" TCP endpoint ────────────────────
+# For clients that CANNOT go through pgdog. The main one is Debezium: logical decoding speaks
+# the streaming-replication protocol (`replication=database` on the startup packet), which a
+# transaction-mode pooler does not proxy. HAProxy is pure TCP passthrough, so the replication
+# protocol survives.
+#
+# Worth knowing why this exists alongside the `role: master` Service above: when a node stops
+# being primary, a Service just drops it from Endpoints — ESTABLISHED connections stay up, so
+# Debezium remains attached to a demoted node until something times out. HAProxy's
+# `on-marked-down shutdown-sessions` severs them immediately, which is the behaviour a CDC
+# consumer needs to fail over.
+haproxy:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: haproxy
+    tag: "3.0-alpine"
+    pullPolicy: IfNotPresent
+  primaryPort: 5000
+  replicaPort: 5001
+  # Stats UI at / and a native Prometheus exporter at /metrics (HAProxy 2.0+, no sidecar).
+  statsPort: 7000
+  service:
+    type: ClusterIP
+  maxconn: 300
+  # Long, because a logical replication stream is a long-lived connection.
+  timeoutClient: 30m
+  timeoutServer: 30m
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 300m
+      memory: 256Mi
+
+# ─── Patroni pod resources / scheduling ──────────────────────────────────────────────
+resources:
+  requests:
+    cpu: 500m
+    memory: 1Gi
+  limits:
+    cpu: "1"
+    memory: 2Gi
+
+# soft, not hard: a `requiredDuringScheduling` anti-affinity rule on a single-node cluster
+# leaves replicas 1 and 2 Pending forever. Switch to required the moment there is a second node.
+podAntiAffinity:
+  enabled: true
+  type: soft
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+# Patroni needs to read and write its own DCS objects (ConfigMaps) and relabel its own pod.
+# Turn off only if you are binding an externally-managed Role.
+rbac:
+  create: true
+
+podSecurityContext:
+  fsGroup: 1000
+containerSecurityContext:
+  runAsUser: 1000
+  runAsGroup: 1000
+  runAsNonRoot: true
+
+nodeSelector: {}
+tolerations: []
+
+# Extra objects rendered verbatim — e.g. an ingress-tcp entry or a ServiceMonitor.
+extraObjects: []

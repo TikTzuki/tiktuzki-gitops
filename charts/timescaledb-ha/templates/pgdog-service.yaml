@@ -1,0 +1,22 @@
+{{- if .Values.pgdog.enabled }}
+# The address applications should know. Nothing else in this chart is meant to appear in an
+# application's connection string.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "tsha.pgdog.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "tsha.pgdog.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.pgdog.service.type }}
+  selector:
+    {{- include "tsha.pgdog.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: pgdog
+      port: {{ .Values.pgdog.port }}
+      targetPort: pgdog
+    - name: metrics
+      port: {{ .Values.pgdog.metricsPort }}
+      targetPort: metrics
+{{- end }}

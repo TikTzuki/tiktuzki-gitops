@@ -1,0 +1,73 @@
+{{- if .Values.haproxy.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "tsha.haproxy.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "tsha.haproxy.labels" . | nindent 4 }}
+data:
+  haproxy.cfg: |
+    # TCP passthrough to whichever node is currently the Patroni leader.
+    #
+    # Exists because some clients CANNOT go through pgdog. The canonical one is Debezium:
+    # logical decoding uses the streaming-replication protocol (`replication=database` on the
+    # startup packet), which a transaction-mode pooler does not proxy. HAProxy in `mode tcp`
+    # forwards bytes untouched, so the replication protocol survives.
+    #
+    # Routing is decided by Patroni's REST API, not by HAProxy guessing:
+    #   GET /primary  -> 200 only on the leader, 503 on replicas
+    #   GET /replica  -> 200 only on a streaming replica
+    # The moment Patroni promotes a new leader the health check flips and HAProxy follows.
+
+    global
+        maxconn {{ .Values.haproxy.maxconn }}
+        # Log to stdout so `kubectl logs` works; the container has no syslog socket.
+        log stdout format raw local0 info
+
+    defaults
+        mode               tcp
+        log                global
+        retries            2
+        timeout connect    4s
+        timeout client     {{ .Values.haproxy.timeoutClient }}
+        timeout server     {{ .Values.haproxy.timeoutServer }}
+        timeout check      3s
+
+    # ── Primary-only — Debezium, migrations, and anything that must write ────────────
+    listen primary
+        bind *:{{ .Values.haproxy.primaryPort }}
+        option httpchk GET /primary
+        http-check expect status 200
+        # on-marked-down shutdown-sessions: when a node stops being primary, kill its existing
+        # connections immediately instead of leaving Debezium attached to a demoted node. This
+        # is the one behaviour a plain Kubernetes Service cannot provide — removing a pod from
+        # Endpoints does not touch ESTABLISHED sockets.
+        default-server inter 3s fall 3 rise 2 on-marked-down shutdown-sessions
+        {{- range $i := until (int .Values.replicaCount) }}
+        server {{ include "tsha.fullname" $ }}-{{ $i }} {{ include "tsha.fullname" $ }}-{{ $i }}.{{ include "tsha.headlessServiceName" $ }}.{{ $.Release.Namespace }}.svc.cluster.local:5432 maxconn 100 check port {{ $.Values.service.restApiPort }}
+        {{- end }}
+
+    # ── Replica-only — read-only consumers that want to bypass pgdog ─────────────────
+    listen replicas
+        bind *:{{ .Values.haproxy.replicaPort }}
+        option httpchk GET /replica
+        http-check expect status 200
+        balance roundrobin
+        default-server inter 3s fall 3 rise 2 on-marked-down shutdown-sessions
+        {{- range $i := until (int .Values.replicaCount) }}
+        server {{ include "tsha.fullname" $ }}-{{ $i }} {{ include "tsha.fullname" $ }}-{{ $i }}.{{ include "tsha.headlessServiceName" $ }}.{{ $.Release.Namespace }}.svc.cluster.local:5432 maxconn 100 check port {{ $.Values.service.restApiPort }}
+        {{- end }}
+
+    # ── Stats UI — shows live which backend is UP for each listener ──────────────────
+    listen stats
+        mode http
+        bind *:{{ .Values.haproxy.statsPort }}
+        stats enable
+        stats uri /
+        stats refresh 5s
+        # HAProxy 2.0+ has a native Prometheus exporter — no sidecar needed. Scrape
+        # :{{ .Values.haproxy.statsPort }}/metrics for haproxy_backend_active_servers{proxy="primary"},
+        # which is the "can a writer still reach a live node" signal.
+        http-request use-service prometheus-exporter if { path /metrics }
+{{- end }}
