@@ -84,6 +84,70 @@ back out of Git.
 
 **3. Register the Argo app**: `apps/base/timescaledb-ha.yaml`.
 
+## Users
+
+Every password lives in the `timescaledb-ha-secret` Secret (`auth.existingSecret`). Nothing in
+this chart accepts an inline password.
+
+| User | Secret key | Created by | Postgres role? | What it is for |
+|---|---|---|---|---|
+| `postgres` | `superuser-password` | Patroni, at bootstrap | superuser | Admin work the app role cannot do: extensions, `patronictl`, migrations. Also `pg_rewind` — no separate rewind role is configured, so Patroni falls back to the superuser. |
+| `app` | `app-password` | `post_init` hook | LOGIN, owns the `app` database, **`pg_monitor`** | The application role. pgdog authenticates to the backends as this user. |
+| `standby` | `replication-password` | Patroni, at bootstrap | REPLICATION | Streaming replication and `pg_basebackup` clones, between pods only. Never use it from an application. |
+| `admin` | `pgdog-admin-password` | — | **no** | pgdog's *own* console credential. See the warning below. |
+
+Change the usernames via `auth.superuserUsername`, `auth.replicationUsername`, and
+`bootstrap.username`; the keys via `auth.secretKeys.*`.
+
+**`admin` is not a Postgres role.** It exists only inside pgdog and only on pgdog's admin
+database. Connecting to a Postgres node as `admin` fails — the role does not exist there.
+
+**Why `app` has `pg_monitor`.** pgdog runs `role = "auto"`, which means it polls
+`pg_is_in_recovery()` and `pg_current_wal_lsn()` *as the app role* to work out which node is
+the leader and how far the replicas lag. Revoke `pg_monitor` and pgdog stops seeing the
+topology: the read/write split silently keeps sending writes to a demoted node.
+
+### Roles this chart does NOT create
+
+The compose stack's `post-init.sh` also created `debezium` (LOGIN REPLICATION), `cdc_reader`
+(the group role holding the outbox table grants), and `pgmon` (for postgres_exporter). None of
+them are here — this chart's bootstrap is deliberately generic.
+
+If you need CDC or per-node metrics, add them through `bootstrap.extraSQL` **before the first
+install**. `post_init` runs once, ever; adding them later means either applying the SQL by hand
+against the live leader or wiping the cluster.
+
+## Access points
+
+Two columns because there are two ways in: pod DNS from inside the cluster, and node1's host
+ports over the NetBird overlay (mapped in `infra/ingress-tcp/configmap.yaml`).
+
+| Endpoint | In-cluster | Via node1 | Use it for |
+|---|---|---|---|
+| **pgdog** | `timescaledb-ha-pgdog.database.svc.cluster.local:6432` | `:6432` | **Applications.** Pooling + read/write split. |
+| pgdog console | same host, database `admin` | `:6432` | `SHOW SERVERS / POOLS / REPLICATION / CLIENTS`, `RELOAD` |
+| **HAProxy primary** | `timescaledb-ha-haproxy.database.svc.cluster.local:5000` | `:5433` | **Debezium/CDC**, `pg_basebackup`, migrations. Raw TCP to the leader. |
+| HAProxy replicas | `timescaledb-ha-haproxy.database.svc.cluster.local:5001` | `:5434` | Read-only clients that must bypass pgdog |
+| Service → leader | `timescaledb-ha-primary.database.svc.cluster.local:5432` | — | psql/admin straight to the leader, no proxy |
+| Service → replicas | `timescaledb-ha-replica.database.svc.cluster.local:5432` | — | Read-only, round-robin |
+| One specific node | `timescaledb-ha-<N>.timescaledb-ha-headless.database.svc.cluster.local:5432` | — | Per-node debugging; **postgres-exporter must use this** |
+| Patroni REST | same host, `:8008` | — | `/health`, `/liveness`, `/readiness`, `/primary`, `/replica`, `/metrics` |
+| pgdog metrics | `timescaledb-ha-pgdog.database.svc.cluster.local:9102/metrics` | — | Prometheus |
+| HAProxy stats | `timescaledb-ha-haproxy.database.svc.cluster.local:7000/` | — | Stats UI at `/`, Prometheus at `/metrics` |
+
+Which user goes where:
+
+```
+app       → pgdog :6432                          (normal application traffic)
+postgres  → pgdog :6432, HAProxy :5433, -primary (admin, migrations, extensions)
+admin     → pgdog :6432, database "admin"        (pooler console only)
+standby   → pod-to-pod :5432                     (Patroni's business, not yours)
+```
+
+**A metrics note that matters:** postgres-exporter must connect to each pod's own DNS name,
+never through pgdog or HAProxy. A pooled connection reports whichever backend it happened to
+land on, so the metrics get attributed to the wrong node — one exporter per node, direct.
+
 ## Operating it
 
 ```bash
@@ -170,12 +234,8 @@ Pending forever. Flip it to `hard` the moment there is a second node.
 
 ## Connecting an application
 
-```
-host     timescaledb-ha-pgdog.database.svc.cluster.local
-port     6432
-user     app          (bootstrap.username)
-database app          (bootstrap.database)
-```
+Host, port, user and database are in [Access points](#access-points) — `app` on pgdog `:6432`.
+One thing that is not obvious from the connection string:
 
 For JDBC behind a transaction pooler, disable server-side prepared statements —
 `prepareThreshold=0` (JDBC) or `preparedStatementCacheQueries=0` (r2dbc). Prepared statements

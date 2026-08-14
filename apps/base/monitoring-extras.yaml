@@ -1,0 +1,32 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: monitoring-extras
+  namespace: devops
+spec:
+  destination:
+    namespace: monitoring
+    server: https://kubernetes.default.svc
+  source:
+    repoURL: git@github.com:TikTzuki/tiktuzki-gitops.git
+    targetRevision: main
+    # Directory-type app (no Helm), same pattern as ingress-tcp.
+    path: infra/monitoring
+  project: default
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      # `monitoring` is created by the monitoring app; this one only adds to it.
+      - CreateNamespace=false
+    # ⚠️ Sync ORDER matters on a first install: the ServiceMonitors here need the
+    # monitoring.coreos.com CRDs, which the `monitoring` app installs. Sync that one first, or
+    # let this app fail and retry — the backoff below reaches 3m, which is comfortably longer
+    # than the operator takes to come up. A red app on first sync is expected, not a bug.
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        maxDuration: 3m0s
+        factor: 2

@@ -1,0 +1,67 @@
+# Static local PVs for the monitoring stack.
+#
+# This cluster has no StorageClass (`kubectl get sc` is empty), so nothing would provision the
+# PVCs kube-prometheus-stack asks for. Each volume gets a class of its OWN rather than sharing
+# one: the binder matches by class + size + accessMode, and a dedicated class per volume makes
+# binding deterministic without having to predict the Prometheus operator's generated PVC name
+# (which encodes the release and CR names and changes if either is renamed).
+#
+# Create the directories on node1 first, with the UIDs each image actually runs as:
+#
+#   sudo mkdir -p /home/tik/data/monitoring/{prometheus,grafana}
+#   sudo chown -R 1000:2000 /home/tik/data/monitoring/prometheus   # prometheus runs 1000:2000
+#   sudo chown -R 472:472   /home/tik/data/monitoring/grafana      # grafana runs 472:472
+#
+# Get the ownership wrong and the pod CrashLoops on "permission denied" opening its data dir.
+#
+# Reclaim policy is Retain on both — losing Grafana's SQLite means losing every dashboard
+# built in the UI, and there is no other copy.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: monitoring-prometheus-pv
+  labels:
+    app.kubernetes.io/part-of: monitoring
+spec:
+  capacity:
+    storage: 20Gi
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: monitoring-prometheus-local
+  local:
+    path: /home/tik/data/monitoring/prometheus
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - node1
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: monitoring-grafana-pv
+  labels:
+    app.kubernetes.io/part-of: monitoring
+spec:
+  capacity:
+    storage: 2Gi
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: monitoring-grafana-local
+  local:
+    path: /home/tik/data/monitoring/grafana
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - node1

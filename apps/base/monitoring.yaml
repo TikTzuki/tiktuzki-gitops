@@ -1,0 +1,261 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: monitoring
+  namespace: devops
+spec:
+  destination:
+    namespace: monitoring
+    server: https://kubernetes.default.svc
+  source:
+    repoURL: https://prometheus-community.github.io/helm-charts
+    chart: kube-prometheus-stack
+    targetRevision: 88.3.0
+    helm:
+      releaseName: monitoring
+      valuesObject:
+        # ─── What to scrape ────────────────────────────────────────────────────────
+        # ⚠️ The single most important setting here. By default the Prometheus CR only
+        # selects ServiceMonitors carrying this release's own labels, so every
+        # ServiceMonitor in infra/monitoring/ would be silently ignored — targets simply
+        # never appear, with no error anywhere. Setting these to false means "select all
+        # ServiceMonitors/PodMonitors/rules in every namespace".
+        prometheus:
+          prometheusSpec:
+            serviceMonitorSelectorNilUsesHelmValues: false
+            podMonitorSelectorNilUsesHelmValues: false
+            ruleSelectorNilUsesHelmValues: false
+            probeSelectorNilUsesHelmValues: false
+            scrapeConfigSelectorNilUsesHelmValues: false
+
+            # 15d, not the 10d default — long enough to compare "this week vs last week"
+            # while fitting the 20Gi volume. retentionSize is the backstop: Prometheus
+            # starts dropping the oldest blocks rather than filling the PV and wedging.
+            retention: 15d
+            retentionSize: 18GB
+
+            storageSpec:
+              volumeClaimTemplate:
+                spec:
+                  # A class of its own, matched by exactly one static PV in
+                  # infra/monitoring/pv.yaml. This cluster has no dynamic provisioner, and a
+                  # dedicated class per volume is what makes binding deterministic without
+                  # having to predict the operator's generated PVC name.
+                  storageClassName: monitoring-prometheus-local
+                  accessModes: ["ReadWriteOnce"]
+                  resources:
+                    requests:
+                      storage: 20Gi
+
+            # Sized for a single 15Gi node that is already ~78% committed on limits. Watch
+            # prometheus_tsdb_head_series — if it climbs past ~500k, raise the limit before
+            # the OOM killer finds it.
+            resources:
+              requests:
+                cpu: 200m
+                memory: 512Mi
+              limits:
+                cpu: "1"
+                memory: 1536Mi
+
+        # ─── Grafana ───────────────────────────────────────────────────────────────
+        grafana:
+          enabled: true
+          # Credentials come from a SealedSecret, never from this file.
+          # Keys: admin-user, admin-password.
+          admin:
+            existingSecret: grafana-admin-secret
+            userKey: admin-user
+            passwordKey: admin-password
+
+          # Small PV so dashboards built in the UI survive a restart. Anything you want
+          # reproducible should still be a provisioned dashboard in Git — this is a
+          # scratchpad, not a source of truth.
+          persistence:
+            enabled: true
+            type: pvc
+            storageClassName: monitoring-grafana-local
+            accessModes: ["ReadWriteOnce"]
+            size: 2Gi
+
+          ingress:
+            enabled: true
+            ingressClassName: public
+            hosts:
+              - grafana.tiktuzki.com
+            path: /
+            pathType: Prefix
+
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 300m
+              memory: 256Mi
+
+          grafana.ini:
+            server:
+              root_url: https://grafana.tiktuzki.com
+            # Keycloak SSO would go here (auth.generic_oauth), matching what kafka-ui does.
+            # Left off for now so the first login does not depend on a second system.
+            users:
+              default_theme: dark
+
+        # ─── Alertmanager ──────────────────────────────────────────────────────────
+        # Rules live in infra/monitoring/alerts-timescaledb-ha.yaml; this is only routing.
+        # Delivery is Telegram — see infra/monitoring/README.md, "Delivering alerts".
+        alertmanager:
+          enabled: true
+          alertmanagerSpec:
+            # Mounts the sealed bot token at
+            # /etc/alertmanager/secrets/alertmanager-telegram/token. The operator mounts each
+            # named Secret under /etc/alertmanager/secrets/<name>/ — the Secret must exist in
+            # the `monitoring` namespace or Alertmanager will not start.
+            secrets:
+              - alertmanager-telegram
+            # emptyDir, not a PV. The only durable state Alertmanager holds is silences and
+            # the notification log, and a third static local volume is not worth it here —
+            # accept that silences are lost on restart.
+            resources:
+              requests:
+                cpu: 20m
+                memory: 64Mi
+              limits:
+                cpu: 200m
+                memory: 128Mi
+
+          config:
+            global:
+              resolve_timeout: 5m
+
+            route:
+              # Group by alert and namespace so a failover that lights up four nodes arrives
+              # as one notification rather than four.
+              group_by: ["alertname", "namespace"]
+              # 30s of collection before the first send — long enough for the related alerts
+              # in a failover to arrive together.
+              group_wait: 30s
+              group_interval: 5m
+              # 12h, not the 4h default: on a homelab a re-notify every 4h for something you
+              # already know about is how you learn to mute the channel.
+              repeat_interval: 12h
+              receiver: telegram
+              routes:
+                # Watchdog fires CONSTANTLY by design — it is kube-prometheus-stack's dead
+                # man's switch, proving the alert pipeline is alive. Route it somewhere real
+                # only if you have a deadman service (healthchecks.io, Cronitor) watching for
+                # its ABSENCE. Delivered anywhere else it is pure noise.
+                - matchers: ['alertname =~ "Watchdog|InfoInhibitor"']
+                  receiver: "null"
+                # PatroniFailoverOccurred is the only info-level alert and it IS worth
+                # knowing about — a failover that self-healed before you looked still cost
+                # clients ~20-30s of errors. Delivered, but on a 24h repeat so it never nags.
+                - matchers: ['severity = "info"']
+                  receiver: telegram
+                  repeat_interval: 24h
+
+            inhibit_rules:
+              # A failover sets off the whole redundancy group at once: replicas stop
+              # streaming, lag spikes, HAProxy loses backends, pgdog logs errors. None of
+              # that is separately actionable while there is no leader — suppress it so the
+              # page says "no leader" rather than listing six symptoms of the same event.
+              - source_matchers:
+                  - 'alertname =~ "PatroniClusterUnlocked|PatroniNoPrimary"'
+                target_matchers:
+                  - 'alertname =~ "PatroniReplicaNotStreaming|PatroniReplicationLagHigh|HAProxyNoReplicaBackends|PgdogServerErrors|PatroniNodeDown"'
+
+            receivers:
+              # Kept so the Watchdog route has somewhere to go. Do not delete.
+              - name: "null"
+
+              - name: telegram
+                telegram_configs:
+                  # bot_token_file, not bot_token: the token comes from the mounted Secret so
+                  # it never appears in this file, in Git, or in `kubectl get alertmanager`.
+                  - bot_token_file: /etc/alertmanager/secrets/alertmanager-telegram/token
+                    # TODO: replace with the real chat ID before syncing. Get it by sending
+                    # any message to the bot, then:
+                    #   curl -s https://api.telegram.org/bot<TOKEN>/getUpdates \
+                    #     | jq '.result[-1].message.chat.id'
+                    # Group chats are NEGATIVE (e.g. -1001234567890); a DM is positive.
+                    # This is an integer, not a string — do not quote it.
+                    chat_id: -5342665860
+                    # ⚠️ HTML mode makes Telegram REJECT the whole message with a 400 if the
+                    # text contains an unescaped <, > or &. Alertmanager does not retry a
+                    # 400, so the alert is silently dropped — the worst possible failure for
+                    # an alerting channel. Keep those characters out of rule annotations
+                    # (they are, as of now), or set parse_mode: "" to make this impossible.
+                    parse_mode: HTML
+                    send_resolved: true
+                    message: |-
+                      <b>[{{ .Status | toUpper }}{{ if eq .Status "firing" }} × {{ .Alerts.Firing | len }}{{ end }}] {{ .CommonLabels.alertname }}</b>
+                      {{ range .Alerts }}
+                      {{ .Annotations.summary }}
+                      {{ .Annotations.description }}
+                      {{ end }}
+
+        # ─── microk8s control-plane scrape jobs: off ───────────────────────────────
+        # microk8s runs these as host processes bound to localhost, not as pods with the
+        # labels the chart's ServiceMonitors expect. Left enabled they produce permanently
+        # DOWN targets and a wall of firing *Down alerts that trains you to ignore alerts.
+        kubeControllerManager:
+          enabled: false
+        kubeScheduler:
+          enabled: false
+        kubeProxy:
+          enabled: false
+        kubeEtcd:
+          enabled: false
+
+        # ─── Node and object metrics ───────────────────────────────────────────────
+        nodeExporter:
+          enabled: true
+        prometheus-node-exporter:
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+
+        kubeStateMetrics:
+          enabled: true
+        kube-state-metrics:
+          resources:
+            requests:
+              cpu: 20m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+
+        prometheusOperator:
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+
+  project: default
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      # ⚠️ Required, not optional. The Prometheus/Alertmanager CRDs are hundreds of KB and
+      # a client-side apply stuffs the whole manifest into the
+      # kubectl.kubernetes.io/last-applied-configuration annotation, which blows the 256KB
+      # annotation limit: "metadata.annotations: Too long". Server-side apply has no such
+      # round trip.
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        maxDuration: 3m0s
+        factor: 2

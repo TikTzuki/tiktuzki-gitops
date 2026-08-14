@@ -1,0 +1,98 @@
+# ServiceMonitors for the TimescaleDB HA stack.
+#
+# All three targets expose Prometheus metrics NATIVELY — no exporter sidecars involved. That is
+# a property of what this cluster runs, not luck: Patroni, pgdog and HAProxy 2.0+ all ship an
+# OpenMetrics endpoint.
+#
+# These live in `monitoring` but select Services in `database`, which works because
+# apps/base/monitoring.yaml sets serviceMonitorSelectorNilUsesHelmValues: false — without it
+# Prometheus ignores every ServiceMonitor it did not create itself, silently.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: timescaledb-ha-patroni
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: monitoring
+spec:
+  namespaceSelector:
+    matchNames:
+      - database
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: timescaledb-ha
+    # The headless, -primary and -replica Services share name+instance labels; only the last
+    # two carry `component`. Excluding it pins this to the headless Service, which is the only
+    # one with publishNotReadyAddresses — so a node that is up but not yet streaming still gets
+    # scraped. That is exactly when its metrics are most interesting.
+    matchExpressions:
+      - key: app.kubernetes.io/component
+        operator: DoesNotExist
+  endpoints:
+    - port: patroni
+      path: /metrics
+      interval: 30s
+      # Patroni's per-node metrics: patroni_primary / patroni_replica (who is leader),
+      # patroni_postgres_running, patroni_xlog_replayed_location, patroni_cluster_unlocked.
+      # patroni_cluster_unlocked == 1 means nobody holds the leader lock — the alert to build
+      # first, since it means writes are failing cluster-wide.
+      relabelings:
+        # Label each series with the pod, so "which node is the leader" is answerable in
+        # Grafana and so alert annotations can name the node that is actually broken.
+        - sourceLabels: [__meta_kubernetes_pod_name]
+          targetLabel: instance
+        # Without this the job label defaults to the Service name — `timescaledb-ha-headless`,
+        # which reads like an implementation detail in every alert and dashboard.
+        - targetLabel: job
+          replacement: timescaledb-ha-patroni
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: timescaledb-ha-pgdog
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: monitoring
+spec:
+  namespaceSelector:
+    matchNames:
+      - database
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: timescaledb-ha-pgdog
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
+      # pgdog's OpenMetrics endpoint (openmetrics_port = 9102). The series that matter here are
+      # the pool ones — waiting clients and checkout time tell you whether default_pool_size is
+      # too small long before anything errors.
+      #
+      # ⚠️ pgdog exports UNPREFIXED metric names — the series are literally `clients`,
+      # `servers`, `pools`, not `pgdog_clients`. Deliberately left as-is to match upstream
+      # docs, but it means a bare PromQL `clients` is ambiguous the moment anything else in the
+      # cluster exports that name. Always qualify by job in queries:
+      #     clients{job="timescaledb-ha-pgdog"}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: timescaledb-ha-haproxy
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: monitoring
+spec:
+  namespaceSelector:
+    matchNames:
+      - database
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: timescaledb-ha-haproxy
+  endpoints:
+    - port: stats
+      path: /metrics
+      interval: 30s
+      # HAProxy's native Prometheus exporter (2.0+), served off the stats listener.
+      # haproxy_backend_active_servers{proxy="primary"} is the signal to alert on: it drops to
+      # 0 whenever no node passes Patroni's /primary check, i.e. Debezium and every other
+      # writer on :5433 has nowhere to go.

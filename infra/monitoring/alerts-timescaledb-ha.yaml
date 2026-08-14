@@ -1,0 +1,249 @@
+# Alert rules for the TimescaleDB HA stack.
+#
+# Every expression here was written against metric names read off the LIVE endpoints
+# (`curl :8008/metrics`, `:9102/metrics`, `:7000/metrics`), not from documentation. If you add
+# rules, do the same — Patroni and pgdog both export names that are easy to guess wrong.
+#
+# Node, pod, PV and kubelet alerts are NOT here: kube-prometheus-stack ships those already
+# (KubePodCrashLooping, KubePersistentVolumeFillingUp, NodeFilesystemAlmostOutOfSpace, ...).
+# Duplicating them just means being paged twice.
+#
+# ⚠️ pgdog exports UNPREFIXED metric names (`cl_waiting`, not `pgdog_cl_waiting`), so every
+# pgdog expression below is qualified by job to avoid colliding with anything else.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: timescaledb-ha
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: monitoring
+spec:
+  groups:
+    # ─────────────────────────────────────────────────────────────────────────────
+    # Cluster availability — these mean writes are failing right now.
+    # ─────────────────────────────────────────────────────────────────────────────
+    - name: timescaledb-ha.availability
+      rules:
+        - alert: PatroniClusterUnlocked
+          # Nobody holds the leader lock. Patroni demotes the primary to read-only when it
+          # cannot hold the lock, so this is "the whole cluster is read-only", not a warning.
+          # 1m rather than instant: a normal failover briefly unlocks the cluster while the
+          # lease expires and the new leader takes it.
+          expr: max(patroni_cluster_unlocked) == 1
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "TimescaleDB HA cluster has no leader"
+            description: >-
+              No node holds the Patroni leader lock, so every node is read-only and all writes
+              are failing. Normal failover clears this within ~20s (the configured ttl); longer
+              means Patroni cannot reach the Kubernetes API, or no replica is eligible to
+              promote. Check `patronictl list` and the Patroni pod logs.
+
+        - alert: PatroniNoPrimary
+          expr: sum(patroni_primary) == 0
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "No TimescaleDB HA node is primary"
+            description: >-
+              Complements PatroniClusterUnlocked — the lock may be held while no node has
+              actually finished promoting.
+
+        - alert: PatroniSplitBrain
+          # Should be impossible: the leader lock is what prevents it. If this fires, something
+          # is badly wrong (DCS partition, or someone ran `patronictl failover` by hand against
+          # a partitioned cluster) and two nodes may be accepting divergent writes.
+          expr: sum(patroni_primary) > 1
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "SPLIT BRAIN — {{ $value }} TimescaleDB nodes claim to be primary"
+            description: >-
+              More than one node reports patroni_primary=1. Stop writes immediately and work
+              out which timeline to keep before anything else.
+
+        - alert: HAProxyNoPrimaryBackend
+          # The CDC path. When this is 0, nothing on :5433 has anywhere to go — Debezium,
+          # migrations, pg_basebackup all fail. Distinct from the Patroni alerts because
+          # HAProxy can lose its backends while Patroni is perfectly healthy (e.g. the health
+          # check port is blocked).
+          expr: haproxy_backend_active_servers{proxy="primary"} == 0
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "HAProxy has no writable backend"
+            description: >-
+              No node passes Patroni's REST /primary check, so the :5433 (in-cluster :5000)
+              writer endpoint is dead. Debezium and any migration job will be failing.
+
+        - alert: PgdogDown
+          # pgdog is a single Deployment replica — if it is gone, every application has lost
+          # its database, even though the database itself is fine.
+          expr: up{job="timescaledb-ha-pgdog"} == 0
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "pgdog is unreachable — applications have no database"
+            description: >-
+              The pooler every application connects to on :6432 is down or unscrapeable. The
+              Patroni cluster may be perfectly healthy; nothing can reach it.
+
+    # ─────────────────────────────────────────────────────────────────────────────
+    # Redundancy — the cluster still works, but it has lost its margin.
+    # ─────────────────────────────────────────────────────────────────────────────
+    - name: timescaledb-ha.redundancy
+      rules:
+        - alert: PatroniNodeDown
+          expr: patroni_postgres_running == 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Postgres not running on {{ $labels.instance }}"
+            description: >-
+              Patroni is up on this node but Postgres is not. Down to
+              {{ with query "sum(patroni_postgres_running)" }}{{ . | first | value }}{{ end }}
+              of 3 nodes.
+
+        - alert: PatroniReplicaNotStreaming
+          # A replica that is up but not streaming is not a failover candidate — it looks
+          # healthy in `kubectl get pods` while contributing nothing to redundancy.
+          expr: patroni_replica == 1 and patroni_postgres_streaming == 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Replica {{ $labels.instance }} is not streaming"
+            description: >-
+              The node is a replica but is not replaying WAL from the leader. It cannot be
+              promoted and pgdog may still be sending reads to it.
+
+        - alert: PatroniReplicationLagHigh
+          # scalar() so the leader's xlog location can be subtracted from each replica's
+          # replayed location while keeping the replica's labels. patroni_xlog_location is 0
+          # on non-leaders and patroni_xlog_replayed_location is 0 on the leader, hence the
+          # `> 0` filter — without it the leader appears infinitely lagged behind itself.
+          #
+          # 16MB deliberately matches pgdog's ban_replica_lag_bytes, so this fires at exactly
+          # the point pgdog stops sending reads to the replica.
+          expr: >-
+            (scalar(max(patroni_xlog_location)) - (patroni_xlog_replayed_location > 0))
+            > 16777216
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Replica {{ $labels.instance }} is {{ $value | humanize1024 }}B behind"
+            description: >-
+              Past 16MB pgdog bans this replica from serving reads, so read capacity silently
+              drops to the remaining nodes. Self-heals when it catches up.
+
+        - alert: HAProxyNoReplicaBackends
+          expr: haproxy_backend_active_servers{proxy="replicas"} == 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "HAProxy has no replica backends"
+            description: >-
+              The read-only :5434 (in-cluster :5001) endpoint has nowhere to send traffic.
+
+        - alert: PatroniDcsUnreachable
+          # Patroni cannot reach the Kubernetes API (its DCS). It cannot renew the leader
+          # lease, so this is the ~20s warning before PatroniClusterUnlocked fires.
+          expr: time() - patroni_dcs_last_seen > 60
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Patroni on {{ $labels.instance }} cannot reach the DCS"
+            description: >-
+              Last successful contact with the Kubernetes API was
+              {{ $value | humanizeDuration }} ago. Patroni cannot renew the leader lease and
+              will demote itself if this continues.
+
+    # ─────────────────────────────────────────────────────────────────────────────
+    # Saturation and drift — not urgent, but they become outages if ignored.
+    # ─────────────────────────────────────────────────────────────────────────────
+    - name: timescaledb-ha.saturation
+      rules:
+        - alert: PgdogClientsWaiting
+          # Clients queuing for a pooled connection. Sustained non-zero means
+          # default_pool_size is too small for the offered load — the symptom users see is
+          # latency, and eventually checkout timeouts.
+          expr: sum(cl_waiting{job="timescaledb-ha-pgdog"}) > 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Clients queuing for a pgdog connection"
+            description: >-
+              {{ $value }} client(s) waiting for a pooled connection for 5m. Raise
+              pgdog.defaultPoolSize, but check max_connections on the backends first — pgdog
+              holds a pool per (user, node).
+
+        - alert: PgdogServerErrors
+          expr: rate(total_server_errors{job="timescaledb-ha-pgdog"}[5m]) > 0
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "pgdog backend connections are erroring"
+            description: >-
+              Sustained errors from server connections. Common causes: a backend was banned
+              for replica lag, credentials drifted from the Secret, or max_connections is
+              exhausted on a node.
+
+        - alert: PatroniPendingRestart
+          # Ties directly to the "Changing postgresql.conf after bootstrap" gap in
+          # charts/timescaledb-ha/README.md: someone ran `patronictl edit-config` and set a
+          # postmaster-level parameter, and the restart never happened. The config in the DCS
+          # and the config actually running have diverged.
+          expr: patroni_pending_restart == 1
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $labels.instance }} needs a restart to apply config"
+            description: >-
+              A postmaster-level parameter changed but the node has not been restarted, so the
+              running config is not the configured one. `patronictl restart timescaledb-ha`.
+
+        - alert: PatroniPaused
+          # `patronictl pause` disables automatic failover. Fine during maintenance, an
+          # unguarded outage if left on — the cluster will not fail over at all.
+          expr: max(patroni_is_paused) == 1
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Patroni auto-failover is PAUSED"
+            description: >-
+              The cluster has been in maintenance mode for 30m. Automatic failover is disabled
+              — a leader loss now means a manual recovery. `patronictl resume timescaledb-ha`.
+
+    # ─────────────────────────────────────────────────────────────────────────────
+    # Informational — no action needed, but you want to know it happened.
+    # ─────────────────────────────────────────────────────────────────────────────
+    - name: timescaledb-ha.events
+      rules:
+        - alert: PatroniFailoverOccurred
+          # The Postgres timeline increments on every promotion. This is the audit trail: it
+          # tells you a failover happened even if everything recovered before you looked.
+          expr: changes(max(patroni_postgres_timeline)[15m:]) > 0
+          for: 0m
+          labels:
+            severity: info
+          annotations:
+            summary: "TimescaleDB HA failed over"
+            description: >-
+              The Postgres timeline advanced in the last 15m, meaning a node was promoted.
+              Expect clients to have seen errors during the switch — the measured window is
+              roughly 20-30s. Check which node leads now with `kubectl get pods -l
+              cluster-name=timescaledb-ha -L role`.
