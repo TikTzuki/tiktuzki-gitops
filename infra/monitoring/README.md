@@ -43,7 +43,30 @@ The secret must exist in the `monitoring` namespace, which the `monitoring` app 
 cold install: sync `monitoring` first, then seal, then sync `monitoring-extras`. Grafana
 CrashLoops until the secret is there.
 
-**3. Sync `monitoring`, then `monitoring-extras`.**
+**3. Seal the remaining secrets** — `alertmanager-telegram` (see "Delivering alerts") and
+`grafana-oauth-secret` (see "Keycloak SSO"). All three sealed secrets live in this directory and
+are delivered by the `monitoring-extras` app.
+
+**4. Register BOTH Argo apps.** `apps/base/` is not driven by an app-of-apps in this repo — the
+manifests there are applied by hand:
+
+```bash
+kubectl apply -f apps/base/monitoring.yaml
+kubectl apply -f apps/base/monitoring-extras.yaml     # ← easy to forget, and everything below depends on it
+```
+
+⚠️ **Forgetting `monitoring-extras` is the failure mode to know.** Everything in this directory —
+StorageClasses, PVs, both SealedSecrets, ServiceMonitors, alert rules — is delivered by that
+app and by nothing else. Skip it and you get three symptoms that look unrelated:
+
+| Symptom | Actual cause |
+|---|---|
+| Grafana pod `Pending` forever | its PVC has no PV to bind |
+| Alertmanager stuck `Init:0/1` | waiting on the `alertmanager-telegram` secret mount |
+| No Prometheus pod at all, CR `Reconciled=False` | `storage class "monitoring-prometheus-local" does not exist` |
+| Grafana up but SSO button 500s | `grafana-oauth-secret` not mounted |
+
+Check with `kubectl get app monitoring-extras -n devops` before debugging anything else.
 
 Grafana lands at **https://grafana.tiktuzki.com** (ingress class `public`, same path as
 `argocd`/`keycloak`/`kafka-ui`).

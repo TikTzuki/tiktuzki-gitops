@@ -16,6 +16,37 @@
 #
 # Reclaim policy is Retain on both — losing Grafana's SQLite means losing every dashboard
 # built in the UI, and there is no other copy.
+#
+# ⚠️ The StorageClass OBJECTS below are not optional, even though nothing provisions anything.
+# A PV that names a class does not bring that class into existence, and the Prometheus Operator
+# explicitly validates the class before it will create the StatefulSet:
+#
+#   Reconciled=False :: ReconciliationFailed ::
+#     storage class "monitoring-prometheus-local" does not exist
+#
+# — no Prometheus pod at all, and the Prometheus CR sits Available=False/StatefulSetNotFound.
+# (A bare PVC does not behave this way; it just pends until a matching PV shows up. This
+# validation is the operator's own, which is why the same pattern works fine for the
+# timescaledb-ha StatefulSet and fails here.)
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: monitoring-prometheus-local
+provisioner: kubernetes.io/no-provisioner
+# WaitForFirstConsumer, not Immediate: binding is deferred until a pod is scheduled, so the
+# scheduler gets to honour the PV's nodeAffinity. With Immediate the volume can bind before
+# scheduling and pin the pod to a node the scheduler would not have chosen.
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Retain
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: monitoring-grafana-local
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Retain
+---
 apiVersion: v1
 kind: PersistentVolume
 metadata:
