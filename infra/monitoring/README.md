@@ -189,6 +189,101 @@ A Telegram message should arrive within `group_wait` (30s). To test a real rule 
 the leader pod and wait for `PatroniFailoverOccurred` — see `charts/timescaledb-ha/README.md`,
 "Verifying failover".
 
+## Keycloak SSO
+
+Grafana authenticates against Keycloak via OIDC (`auth.generic_oauth` in
+`apps/base/monitoring.yaml`). The local admin login stays enabled as a break-glass account.
+
+### 0. Make Keycloak proxy-aware — do this first
+
+Keycloak was advertising **`http://`** URLs in its discovery document even over HTTPS, because
+`hostname` and `proxyHeaders` were unset and nginx terminates TLS in front of it. OIDC would
+have sent browsers to `http://` and minted tokens with an `http://` issuer claim.
+
+Fixed in `charts/keycloak/values-dev.yaml`:
+
+```yaml
+keycloak:
+  hostname: "https://keycloak.tiktuzki.com"
+  proxyHeaders: "xforwarded"
+```
+
+Sync the `keycloak` app, then verify before going further:
+
+```bash
+curl -s https://keycloak.tiktuzki.com/realms/master/.well-known/openid-configuration \
+  | jq -r .issuer      # must start with https://
+```
+
+If that still says `http://`, stop — nothing below will work reliably.
+
+### 1. Create the realm
+
+Only `master` exists today. **Do not put Grafana in it** — `master` is the realm that
+administers Keycloak itself, so every Grafana user would exist in it.
+
+Create a realm named **`homelab`** (Keycloak admin console → Create realm). If you name it
+something else, change it in all four `.../realms/homelab/...` URLs in `monitoring.yaml`.
+
+### 2. Create the Grafana client
+
+In realm `homelab` → Clients → Create client:
+
+| Setting | Value |
+|---|---|
+| Client ID | `grafana` |
+| Client authentication | **On** (confidential — Grafana is a server-side app and can hold a secret) |
+| Standard flow | On |
+| Direct access grants | Off |
+| Valid redirect URIs | `https://grafana.tiktuzki.com/login/generic_oauth` |
+| Valid post logout redirect URIs | `https://grafana.tiktuzki.com/login` |
+| Web origins | `https://grafana.tiktuzki.com` |
+
+The redirect URI must match exactly — Keycloak rejects mismatches with
+`Invalid parameter: redirect_uri`, which surfaces in Grafana as a bare 500.
+
+### 3. Create client roles and assign them
+
+Still in the `grafana` client → **Roles** → create `admin` and `editor`. Then Users → *your
+user* → Role mapping → Filter by clients → assign.
+
+`role_attribute_path` reads `resource_access.grafana.roles`, so these must be **client** roles,
+not realm roles. Anyone with neither role gets `Viewer` (`role_attribute_strict: false`).
+
+### 4. Seal the client secret
+
+Clients → `grafana` → Credentials → copy the client secret:
+
+```bash
+kubectl create secret generic grafana-oauth-secret \
+  --namespace monitoring \
+  --from-literal=client-secret='<client-secret-from-keycloak>' \
+  --dry-run=client -o yaml \
+| kubeseal --controller-namespace sealed-secrets \
+           --controller-name sealed-secrets-controller \
+           --format yaml \
+> infra/monitoring/grafana-oauth-sealedsecret.yaml
+```
+
+Mounted at `/etc/secrets/oauth/client-secret` and read via Grafana's `$__file{}` expansion, so
+the secret never reaches `grafana.ini`, the rendered ConfigMap, or Git.
+
+### Troubleshooting
+
+| Symptom | Cause |
+|---|---|
+| `Invalid parameter: redirect_uri` | Redirect URI in Keycloak ≠ `https://grafana.tiktuzki.com/login/generic_oauth` |
+| Login works, everyone is Viewer | `roles` scope missing from the client, or roles created as realm roles instead of client roles |
+| `token signature is invalid` / issuer mismatch | Step 0 not applied — discovery still advertising `http://` |
+| Locked out entirely | Use the local admin at `https://grafana.tiktuzki.com/login` — the form is deliberately still there |
+
+### Prometheus and Alertmanager
+
+Neither has any authentication, and neither is behind SSO — because neither is exposed. Both
+are ClusterIP-only; reach them with `kubectl port-forward`. **If you ever add an Ingress for
+them, put oauth2-proxy in front** — they have no auth of their own, and the Alertmanager UI can
+silence every alert in the cluster.
+
 ## Decisions worth knowing
 
 **microk8s control-plane scrape jobs are off.** `kubeControllerManager`, `kubeScheduler`,

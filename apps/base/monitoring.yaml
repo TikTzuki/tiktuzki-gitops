@@ -94,13 +94,71 @@ spec:
               cpu: 300m
               memory: 256Mi
 
+          # The OIDC client secret, mounted as a file rather than pasted into grafana.ini.
+          # Grafana's $__file{} expansion means the value never appears in this repo, in the
+          # rendered ConfigMap, or in `kubectl get cm monitoring-grafana -o yaml`.
+          extraSecretMounts:
+            - name: grafana-oauth
+              secretName: grafana-oauth-secret
+              mountPath: /etc/secrets/oauth
+              readOnly: true
+
           grafana.ini:
             server:
               root_url: https://grafana.tiktuzki.com
-            # Keycloak SSO would go here (auth.generic_oauth), matching what kafka-ui does.
-            # Left off for now so the first login does not depend on a second system.
             users:
               default_theme: dark
+
+            auth:
+              # ⚠️ Keep the local login form. It is the break-glass account: if Keycloak is
+              # down, its realm is misconfigured, or the client secret drifts, this is the
+              # only way back into Grafana — and Grafana is where you look when things are
+              # broken. Disabling it makes your monitoring depend on the thing you monitor.
+              disable_login_form: false
+              # Do not bounce straight to Keycloak; leave the "Sign in with Keycloak" button
+              # so the local form stays reachable.
+              oauth_auto_login: false
+
+            auth.generic_oauth:
+              enabled: true
+              name: Keycloak
+              icon: signin
+              # Realm `homelab`, NOT `master`. master is Keycloak's own administrative realm —
+              # putting application clients and end users in it means anyone who can log into
+              # Grafana exists in the realm that administers Keycloak itself.
+              # This realm name appears in four URLs below; change all four together.
+              client_id: grafana
+              client_secret: $__file{/etc/secrets/oauth/client-secret}
+              scopes: "openid email profile roles"
+              auth_url: https://keycloak.tiktuzki.com/realms/homelab/protocol/openid-connect/auth
+              token_url: https://keycloak.tiktuzki.com/realms/homelab/protocol/openid-connect/token
+              api_url: https://keycloak.tiktuzki.com/realms/homelab/protocol/openid-connect/userinfo
+              signout_redirect_url: https://keycloak.tiktuzki.com/realms/homelab/protocol/openid-connect/logout?post_logout_redirect_uri=https%3A%2F%2Fgrafana.tiktuzki.com%2Flogin
+
+              email_attribute_path: email
+              login_attribute_path: preferred_username
+              name_attribute_path: name
+
+              # Maps Keycloak CLIENT roles (resource_access.grafana.roles) to Grafana roles.
+              # Client roles rather than realm roles so "admin in Grafana" cannot be granted
+              # by accident from a realm-wide role that means something else elsewhere.
+              #
+              # Requires the `roles` client scope on the client (default in Keycloak) — without
+              # it resource_access is absent from the token and everyone lands on Viewer.
+              role_attribute_path: "contains(resource_access.grafana.roles[*], 'admin') && 'Admin' || contains(resource_access.grafana.roles[*], 'editor') && 'Editor' || 'Viewer'"
+              # false: a realm user with no Grafana client role gets Viewer instead of being
+              # refused. Because anyone in the realm can then read every dashboard, set this to
+              # true (and assign roles explicitly) the moment the realm holds people who should
+              # not see monitoring.
+              role_attribute_strict: false
+              allow_sign_up: true
+
+              # PKCE closes the authorization-code interception window; Keycloak supports it
+              # and Grafana 9+ speaks it.
+              use_pkce: true
+              # Refresh tokens, so a session survives past the (short) access-token lifetime
+              # without bouncing the user back to Keycloak mid-dashboard.
+              use_refresh_token: true
 
         # ─── Alertmanager ──────────────────────────────────────────────────────────
         # Rules live in infra/monitoring/alerts-timescaledb-ha.yaml; this is only routing.

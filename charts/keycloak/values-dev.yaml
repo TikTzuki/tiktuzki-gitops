@@ -91,7 +91,14 @@ keycloak:
   secretKeys:
     adminPasswordKey: "admin-password"
   ## @param keycloak.hostname Keycloak hostname
-  hostname: ""
+  # ⚠️ REQUIRED for OIDC. Left empty, Keycloak infers its public URL from the request and
+  # advertises http:// in /.well-known/openid-configuration even when reached over HTTPS —
+  # issuer, authorization_endpoint, token_endpoint, all http. Any OIDC client then redirects
+  # browsers to http:// and validates an issuer claim that does not match what it expects.
+  # Verify after changing:
+  #   curl -s https://keycloak.tiktuzki.com/realms/master/.well-known/openid-configuration \
+  #     | jq -r .issuer     # must start with https://
+  hostname: "https://keycloak.tiktuzki.com"
   ## @param keycloak.hostnameAdmin Keycloak admin hostname
   hostnameAdmin: ""
   ## @param keycloak.hostnameStrict Enable strict hostname resolution
@@ -107,7 +114,13 @@ keycloak:
   ## @param keycloak.httpsPort HTTPS port
   httpsPort: 8443
   ## @param keycloak.proxyHeaders The proxy headers that should be accepted by the server. (forwarded, xforwarded)
-  proxyHeaders: ""
+  # xforwarded: trust nginx's X-Forwarded-Proto/-For/-Host. Without this Keycloak sees plain
+  # HTTP on :8080 and has no idea TLS was terminated in front of it, which is the other half
+  # of the http:// discovery-document problem above.
+  #
+  # Only safe because nothing can reach the pod except through the ingress — these headers are
+  # client-spoofable if the Service is ever exposed directly.
+  proxyHeaders: "xforwarded"
   ## @param keycloak.proxyProtocolEnabled  Whether the server should use the HA PROXY protocol when serving requests from behind a proxy. (true, false(default))
   proxyProtocolEnabled: false
   ## @param keycloak.proxyTrustedAddresses A comma separated list of trusted proxy addresses
@@ -258,7 +271,7 @@ ingress:
   ## @param ingress.hosts[0].paths[0].path Path for Keycloak ingress
   ## @param ingress.hosts[0].paths[0].pathType Path type for Keycloak ingress
   hosts:
-    - host: keycloak-dev.tiktuzki.com
+    - host: keycloak.tiktuzki.com
       paths:
         - path: /
           pathType: Prefix
