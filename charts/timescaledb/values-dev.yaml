@@ -2,7 +2,7 @@
 
 # TimescaleDB Authentication
 auth:
-  existingSecret: "database-secret"
+  existingSecret: "timescaledb-secret"
   secretKeys:
     adminPasswordKey: "postgres-password"
 
