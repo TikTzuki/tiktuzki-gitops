@@ -25,7 +25,7 @@ kafka:
 auth:
   enabled: true
   username: admin
-  existingSecret: database-secret
+  existingSecret: kafka-secret
   passwordKey: kafka-admin-password
   seedCredentials: true
 

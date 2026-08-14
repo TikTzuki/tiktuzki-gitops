@@ -8,7 +8,7 @@ replicaCount: 1
 redis:
   masterGroupName: mymaster
   # No auth in dev. To enable, create a secret and set:
-  existingSecret: database-secret
+  existingSecret: redis-secret
   existingSecretPasswordKey: redis-password
   resources:
     limits:
