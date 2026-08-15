@@ -183,6 +183,8 @@ kafkaUi:
   # `clusterconfig` and `ksql` take no `value`.
   rbac:
     enabled: false
+    # Token claim kafka-ui reads roles from (Keycloak Group Membership mapper -> `groups`).
+    rolesField: groups
     roles: [ ]
   podAnnotations: { }
   podSecurityContext: { }

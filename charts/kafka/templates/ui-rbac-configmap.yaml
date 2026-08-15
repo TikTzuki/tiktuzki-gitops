@@ -14,6 +14,28 @@ data:
   # typo in a group name locks everyone out — including you. Verify the `groups` claim shape
   # before relying on it (see charts/kafka/README or the sso notes).
   rbac.yaml: |
+    # ─── OAuth role extraction ──────────────────────────────────────────────────
+    # Set HERE rather than as AUTH_OAUTH2_CLIENT_<ID>_CUSTOM_PARAMS_ROLES_FIELD, because
+    # custom-params is a Map and `roles-field` is a hyphenated key. Spring's relaxed binding
+    # cannot tell CUSTOM_PARAMS_ROLES_FIELD apart from custom-params.roles.field or
+    # custom_params.roles_field — the underscores are ambiguous, and a map key that binds to
+    # the wrong name is simply absent with no error.
+    #
+    # That matters more than it sounds: with roles-field unset, kafka-ui extracts NO roles,
+    # every RBAC subject of type `role` matches nothing, and users are denied everything —
+    # which is exactly what a correctly-grouped user reports as "cannot access topics".
+    #
+    # In YAML the key is written literally, so there is nothing to infer.
+    auth:
+      oauth2:
+        client:
+          {{ .Values.kafkaUi.auth.oauth2.provider }}:
+            custom-params:
+              # `oauth` selects the generic OIDC extractor. NOT `keycloak` — kafbat's docs
+              # specify the generic value for Keycloak.
+              type: oauth
+              roles-field: {{ .Values.kafkaUi.rbac.rolesField | quote }}
+
     rbac:
       roles:
         {{- range .Values.kafkaUi.rbac.roles }}

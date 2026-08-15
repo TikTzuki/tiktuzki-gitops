@@ -74,12 +74,14 @@ kafkaUi:
       clientSecretKey: client-secret
 
   extraEnv:
-    # The chart sets CUSTOM_PARAMS_TYPE automatically only for google. `oauth` selects
-    # kafka-ui's generic OIDC role extractor, which is what makes RBAC subjects work at all.
-    AUTH_OAUTH2_CLIENT_KEYCLOAK_CUSTOM_PARAMS_TYPE: "oauth"
-    # Which token claim holds the values matched by `type: role` subjects below. Keycloak's
-    # groups mapper writes to `groups`.
-    AUTH_OAUTH2_CLIENT_KEYCLOAK_CUSTOM_PARAMS_ROLES_FIELD: "groups"
+    # custom-params.type / roles-field are set in the mounted rbac.yaml instead — see the
+    # comment there about Spring's env-var binding being ambiguous for hyphenated map keys.
+    #
+    # Temporary, until RBAC is confirmed working: logs the roles kafka-ui extracts from the
+    # token and the access decisions it makes. Without this, a denial and a "no roles found"
+    # look identical from the outside. Remove once verified.
+    LOGGING_LEVEL_IO_KAFBAT_UI_SERVICE_RBAC: "DEBUG"
+    LOGGING_LEVEL_IO_KAFBAT_UI_CONFIG_AUTH: "DEBUG"
 
   # ⚠️ Deny-by-default once enabled. Group names must match the `groups` claim EXACTLY —
   # Keycloak's mapper emits the full path (`/kafka-admins`) unless "Full group path" is turned
@@ -87,6 +89,10 @@ kafkaUi:
   # have confirmed the claim shape.
   rbac:
     enabled: true
+    # The token claim kafka-ui reads roles from. Keycloak's Group Membership mapper writes
+    # `groups`; a client-roles mapper would write `resource_access.<client>.roles`, which this
+    # flat lookup cannot reach — hence groups rather than client roles for this app.
+    rolesField: groups
     roles:
       # Full control of the dev cluster.
       - name: kafka-admins
