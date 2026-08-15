@@ -1,0 +1,49 @@
+{{- if .Values.kafkaUi.rbac.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "kafka.ui.fullname" . }}-rbac
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kafka.ui.labels" . | nindent 4 }}
+data:
+  # Merged over the env-var config via SPRING_CONFIG_ADDITIONAL_LOCATION (see ui-deployment).
+  #
+  # ⚠️ Enabling RBAC is deny-by-default: once `rbac.roles` is non-empty, a user matching NO
+  # role sees an empty UI rather than the whole cluster. That is the point, but it means a
+  # typo in a group name locks everyone out — including you. Verify the `groups` claim shape
+  # before relying on it (see charts/kafka/README or the sso notes).
+  rbac.yaml: |
+    rbac:
+      roles:
+        {{- range .Values.kafkaUi.rbac.roles }}
+        - name: {{ .name | quote }}
+          clusters:
+            {{- range .clusters }}
+            - {{ . | quote }}
+            {{- end }}
+          subjects:
+            {{- range .subjects }}
+            # provider `oauth` + type `role` matches the values kafka-ui extracts from the
+            # token field named by CUSTOM_PARAMS_ROLES_FIELD. Only `user` and `role` are valid
+            # types for the generic oauth provider — `group` exists only for cognito/ldap.
+            - provider: {{ .provider | default "oauth" | quote }}
+              type: {{ .type | quote }}
+              value: {{ .value | quote }}
+              {{- if .regex }}
+              regex: true
+              {{- end }}
+            {{- end }}
+          permissions:
+            {{- range .permissions }}
+            - resource: {{ .resource | quote }}
+              {{- with .value }}
+              value: {{ . | quote }}
+              {{- end }}
+              actions:
+                {{- range .actions }}
+                - {{ . | quote }}
+                {{- end }}
+            {{- end }}
+        {{- end }}
+{{- end }}

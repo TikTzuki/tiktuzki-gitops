@@ -170,6 +170,20 @@ kafkaUi:
     tls: [ ]
   # Extra environment variables (KAFKA_CLUSTERS_0_* etc.) merged verbatim.
   extraEnv: { }
+
+  # Role-based access control, rendered into a mounted rbac.yaml (see ui-rbac-configmap.yaml).
+  #
+  # ⚠️ Turning this on is deny-by-default: a user matching no role gets an empty UI, not the
+  # whole cluster. Leave it off and every authenticated user is a full admin.
+  #
+  # Each role: name, clusters[], subjects[{provider,type,value,regex}], permissions[].
+  # Valid permission resources: applicationconfig, clusterconfig, topic, consumer, schema,
+  # connect, connector, ksql, acl, audit. Actions vary per resource; "all" covers every action
+  # on that resource. There is NO wildcard for *resources* — each one must be listed.
+  # `clusterconfig` and `ksql` take no `value`.
+  rbac:
+    enabled: false
+    roles: [ ]
   podAnnotations: { }
   podSecurityContext: { }
   securityContext: { }

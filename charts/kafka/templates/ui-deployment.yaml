@@ -94,6 +94,12 @@ spec:
             {{- end }}
             {{- end }}
             {{- end }}
+            {{- if .Values.kafkaUi.rbac.enabled }}
+            # Points Spring at the mounted RBAC file. Additional locations are merged OVER the
+            # env-var config rather than replacing it, so everything above still applies.
+            - name: SPRING_CONFIG_ADDITIONAL_LOCATION
+              value: "file:/etc/kafkaui/"
+            {{- end }}
             {{- range $k, $v := .Values.kafkaUi.extraEnv }}
             - name: {{ $k }}
               value: {{ $v | quote }}
@@ -128,6 +134,22 @@ spec:
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
+          {{- if .Values.kafkaUi.rbac.enabled }}
+          volumeMounts:
+            # kafka-ui is a Spring Boot app, so an extra config location is merged over the
+            # env-var config. RBAC lives here as real YAML rather than the ~30 indexed env vars
+            # (RBAC_ROLES_0_PERMISSIONS_3_ACTIONS_1 …) the same policy would need otherwise.
+            # The trailing slash is required — Spring treats a location without one as a file.
+            - name: rbac-config
+              mountPath: /etc/kafkaui
+              readOnly: true
+          {{- end }}
+      {{- if .Values.kafkaUi.rbac.enabled }}
+      volumes:
+        - name: rbac-config
+          configMap:
+            name: {{ include "kafka.ui.fullname" . }}-rbac
+      {{- end }}
       {{- with .Values.kafkaUi.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

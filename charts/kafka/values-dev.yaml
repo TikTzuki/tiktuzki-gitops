@@ -44,23 +44,85 @@ external:
 kafkaUi:
   enabled: true
   clusterName: kafka-dev
-  # SSO via Keycloak. Create the OIDC client first (see deploy notes) and a kafka-ui-oauth secret
-  # holding its client-secret. Set issuerUri to the realm you register the client in.
-  # Sign in with Google directly (no Keycloak). Create an OAuth client in Google Cloud Console
-  # with redirect URI https://kafka-ui.tiktuzki.com/login/oauth2/code/google, then put its client
-  # secret in the kafka-ui-oauth secret (key client-secret). Set clientId below.
+  # SSO via Keycloak (realm `homelab`), replacing the previous direct-to-Google OAuth client.
+  #
+  # Register the client in Keycloak with:
+  #   Client ID                   kafka-ui
+  #   Client authentication       On  (confidential)
+  #   Valid redirect URIs         https://kafka-ui.tiktuzki.com/login/oauth2/code/keycloak
+  #   Web origins                 https://kafka-ui.tiktuzki.com
+  # The redirect path ends in the PROVIDER name below, not the client id — change `provider`
+  # and the URI Keycloak must accept changes with it.
+  #
+  # Then re-seal kafka-ui-oauth with the Keycloak client secret (key: client-secret). The
+  # existing Secret still holds the Google one, so SSO stays broken until it is replaced.
   auth:
     type: OAUTH2
     oauth2:
-      provider: google
-      clientId: 596742570337-asvjj8n18ejkha8l23julahful47jnpi.apps.googleusercontent.com # TODO: <id>.apps.googleusercontent.com
-      clientName: Google
-      userNameAttribute: email
-      scope: "openid,email,profile"
-      issuerUri: ""                # not needed for google
-      allowedDomain: ""            # optional: e.g. newera.inc to restrict to your Workspace
+      provider: keycloak
+      clientId: kafka-ui
+      clientName: Keycloak
+      # preferred_username, not email: it is what appears in the audit log and in RBAC
+      # `type: user` subjects, and it is stable even if a user changes their address.
+      userNameAttribute: preferred_username
+      # `groups` is what carries authorization — without the scope the claim is absent, every
+      # role below matches nothing, and RBAC silently denies everyone.
+      scope: "openid,profile,email,groups"
+      issuerUri: https://keycloak.tiktuzki.com/realms/homelab
+      allowedDomain: ""            # google-only; ignored for keycloak
       existingSecret: kafka-ui-oauth
       clientSecretKey: client-secret
+
+  extraEnv:
+    # The chart sets CUSTOM_PARAMS_TYPE automatically only for google. `oauth` selects
+    # kafka-ui's generic OIDC role extractor, which is what makes RBAC subjects work at all.
+    AUTH_OAUTH2_CLIENT_KEYCLOAK_CUSTOM_PARAMS_TYPE: "oauth"
+    # Which token claim holds the values matched by `type: role` subjects below. Keycloak's
+    # groups mapper writes to `groups`.
+    AUTH_OAUTH2_CLIENT_KEYCLOAK_CUSTOM_PARAMS_ROLES_FIELD: "groups"
+
+  # ⚠️ Deny-by-default once enabled. Group names must match the `groups` claim EXACTLY —
+  # Keycloak's mapper emits the full path (`/kafka-admins`) unless "Full group path" is turned
+  # OFF on the mapper. Both forms are listed via regex so it works either way; tighten once you
+  # have confirmed the claim shape.
+  rbac:
+    enabled: true
+    roles:
+      # Full control of the dev cluster.
+      - name: kafka-admins
+        clusters: [kafka-dev]
+        subjects:
+          - provider: oauth
+            type: role
+            value: "/?kafka-admins"
+            regex: true
+        permissions:
+          # No wildcard exists for `resource`, so every resource is listed explicitly.
+          # "all" covers every action available on that resource.
+          - { resource: applicationconfig, actions: ["all"] }
+          - { resource: clusterconfig,     actions: ["all"] }
+          - { resource: topic,     value: ".*", actions: ["all"] }
+          - { resource: consumer,  value: ".*", actions: ["all"] }
+          - { resource: schema,    value: ".*", actions: ["all"] }
+          - { resource: connect,   value: ".*", actions: ["all"] }
+          - { resource: acl,                    actions: ["all"] }
+
+      # Read-only: browse topics and consumer groups, read messages, change nothing.
+      - name: kafka-viewers
+        clusters: [kafka-dev]
+        subjects:
+          - provider: oauth
+            type: role
+            value: "/?kafka-viewers"
+            regex: true
+        permissions:
+          - { resource: clusterconfig, actions: ["view"] }
+          # messages_read is deliberate and worth a thought: topic payloads may contain PII,
+          # so "viewer" here is not automatically a safe tier. Drop it to make this
+          # metadata-only.
+          - { resource: topic,    value: ".*", actions: ["view", "messages_read"] }
+          - { resource: consumer, value: ".*", actions: ["view"] }
+          - { resource: schema,   value: ".*", actions: ["view"] }
   ingress:
     enabled: true
     className: public
