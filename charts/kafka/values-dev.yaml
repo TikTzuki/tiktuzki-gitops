@@ -96,7 +96,8 @@ kafkaUi:
     roles:
       # Full control of the dev cluster.
       - name: kafka-admins
-        clusters: [kafka-dev]
+        # No `clusters:` — the chart fills in every cluster it knows about (kafkaUi.clusterName).
+        # Set it explicitly only to scope a role to a subset.
         subjects:
           - provider: oauth
             type: role
@@ -115,7 +116,6 @@ kafkaUi:
 
       # Read-only: browse topics and consumer groups, read messages, change nothing.
       - name: kafka-viewers
-        clusters: [kafka-dev]
         subjects:
           - provider: oauth
             type: role

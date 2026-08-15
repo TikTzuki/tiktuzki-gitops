@@ -40,8 +40,20 @@ data:
       roles:
         {{- range .Values.kafkaUi.rbac.roles }}
         - name: {{ .name | quote }}
+          # `clusters` is matched by EXACT NAME — kafka-ui supports no wildcard or regex here
+          # (unlike a permission's `value`). Omitting it in values therefore does not mean
+          # "all"; it means the chart fills in every cluster it knows about, which is the
+          # closest safe equivalent.
+          #
+          # It also removes a whole bug class: a role naming `kafka-dev` while
+          # kafkaUi.clusterName says something else silently matches nothing, and the user is
+          # denied with no indication which of the two names is wrong.
+          #
+          # ⚠️ "every cluster the CHART knows" = kafkaUi.clusterName. A second cluster wired up
+          # by hand through extraEnv (KAFKA_CLUSTERS_1_NAME) is invisible here and must be
+          # listed explicitly in the role.
           clusters:
-            {{- range .clusters }}
+            {{- range (default (list $.Values.kafkaUi.clusterName) .clusters) }}
             - {{ . | quote }}
             {{- end }}
           subjects:
