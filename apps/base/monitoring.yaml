@@ -86,13 +86,28 @@ spec:
             path: /
             pathType: Prefix
 
+          # Sized from measurement, not estimate. The original 256Mi limit OOMKilled Grafana
+          # (exit 137) — measured peak working set was 255.2Mi against a 256Mi ceiling.
+          # Steady state is ~157Mi; the spikes come from rendering dashboards and the OAuth
+          # login path, so they land exactly when someone is looking at it.
+          #
+          # The symptom is misleading: the visible event is
+          #   Readiness probe failed: dial tcp 10.1.166.173:3000: connect: connection refused
+          # and Grafana serves 503 — but that is just the ~15s restart window. Check
+          # lastState.terminated.reason for OOMKilled before chasing the probe.
+          #
+          # 512Mi is 2x the observed peak. Re-measure before trimming it:
+          #   max_over_time(container_memory_working_set_bytes{
+          #     namespace="monitoring",pod=~"monitoring-grafana.*",container="grafana"}[7d])
           resources:
             requests:
+              # Above the ~157Mi steady state so the scheduler accounts for real usage.
               cpu: 50m
-              memory: 128Mi
+              memory: 192Mi
             limits:
               cpu: 300m
-              memory: 256Mi
+              memory: 512Mi
+
 
           # ⚠️ Required on microk8s — currently live on the pod, so removing it from this file
           # does not take effect until the next apply, and then breaks things quietly.
@@ -113,6 +128,17 @@ spec:
           # certificate in the cluster.
           sidecar:
             skipTlsVerify: true
+            # The two k8s-sidecars shipped with NO limits at all — the chart sets none by
+            # default. Both sit flat at ~72Mi, so 128Mi is generous headroom while still
+            # bounding a runaway. An unbounded container on a node already at 93% of its
+            # memory limits is the kind of thing that takes out a neighbour rather than itself.
+            resources:
+              requests:
+                cpu: 10m
+                memory: 96Mi
+              limits:
+                cpu: 100m
+                memory: 128Mi
 
           # The OIDC client secret, mounted as a file rather than pasted into grafana.ini.
           # Grafana's $__file{} expansion means the value never appears in this repo, in the
