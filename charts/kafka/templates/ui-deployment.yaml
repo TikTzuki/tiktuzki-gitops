@@ -95,10 +95,15 @@ spec:
             {{- end }}
             {{- end }}
             {{- if .Values.kafkaUi.rbac.enabled }}
-            # Points Spring at the mounted RBAC file. Additional locations are merged OVER the
-            # env-var config rather than replacing it, so everything above still applies.
+            # ⚠️ An exact FILE path, not a directory. Spring Boot given a directory location
+            # loads only files named application.{yaml,yml,properties} from it — a file called
+            # rbac.yaml is silently ignored. That failure is invisible and dangerous: no config
+            # loads, kafka-ui sees zero roles, and with zero roles defined it grants EVERY
+            # authenticated user full admin, including topic creation.
+            #
+            # Directory locations must end in "/", file locations must not.
             - name: SPRING_CONFIG_ADDITIONAL_LOCATION
-              value: "file:/etc/kafkaui/"
+              value: "file:/etc/kafka-ui-rbac/rbac.yaml"
             {{- end }}
             {{- range $k, $v := .Values.kafkaUi.extraEnv }}
             - name: {{ $k }}
@@ -136,12 +141,14 @@ spec:
           {{- end }}
           {{- if .Values.kafkaUi.rbac.enabled }}
           volumeMounts:
-            # kafka-ui is a Spring Boot app, so an extra config location is merged over the
-            # env-var config. RBAC lives here as real YAML rather than the ~30 indexed env vars
+            # RBAC lives here as real YAML rather than the ~30 indexed env vars
             # (RBAC_ROLES_0_PERMISSIONS_3_ACTIONS_1 …) the same policy would need otherwise.
-            # The trailing slash is required — Spring treats a location without one as a file.
+            #
+            # ⚠️ Deliberately NOT /etc/kafkaui — that is kafka-ui's own config directory, where
+            # it reads and (with DYNAMIC_CONFIG_ENABLED) WRITES dynamic_config.yaml. Mounting a
+            # read-only ConfigMap over it shadows that file and breaks dynamic config.
             - name: rbac-config
-              mountPath: /etc/kafkaui
+              mountPath: /etc/kafka-ui-rbac
               readOnly: true
           {{- end }}
       {{- if .Values.kafkaUi.rbac.enabled }}
