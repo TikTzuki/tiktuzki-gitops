@@ -94,6 +94,26 @@ spec:
               cpu: 300m
               memory: 256Mi
 
+          # ⚠️ Required on microk8s — currently live on the pod, so removing it from this file
+          # does not take effect until the next apply, and then breaks things quietly.
+          #
+          # The two k8s-sidecar containers are Python and verify the API server certificate via
+          # OpenSSL 3, which rejects a CA with no keyUsage extension — microk8s's self-signed CA
+          # has none:
+          #
+          #   SSLError: certificate verify failed: CA cert does not include key usage extension
+          #
+          # The sidecar then CrashLoops (observed reaching 6 restarts), which reads as "Grafana
+          # keeps restarting" even though the grafana container is healthy. Two things vanish
+          # with it: the provisioned TimescaleDB HA dashboard, and the Prometheus datasource —
+          # both arrive through these sidecars.
+          #
+          # Scope is narrow: verification is disabled only for these sidecars' in-cluster API
+          # calls. The alternative is regenerating the microk8s CA, which re-issues every
+          # certificate in the cluster.
+          sidecar:
+            skipTlsVerify: true
+
           # The OIDC client secret, mounted as a file rather than pasted into grafana.ini.
           # Grafana's $__file{} expansion means the value never appears in this repo, in the
           # rendered ConfigMap, or in `kubectl get cm monitoring-grafana -o yaml`.
@@ -145,12 +165,22 @@ spec:
               #
               # Requires the `roles` client scope on the client (default in Keycloak) — without
               # it resource_access is absent from the token and everyone lands on Viewer.
-              role_attribute_path: "contains(resource_access.grafana.roles[*], 'admin') && 'Admin' || contains(resource_access.grafana.roles[*], 'editor') && 'Editor' || 'Viewer'"
-              # false: a realm user with no Grafana client role gets Viewer instead of being
-              # refused. Because anyone in the realm can then read every dashboard, set this to
-              # true (and assign roles explicitly) the moment the realm holds people who should
-              # not see monitoring.
-              role_attribute_strict: false
+              # ⚠️ Note there is NO `|| 'Viewer'` fallback at the end, and that omission is the
+              # load-bearing half of this pair. A trailing literal makes the expression always
+              # succeed, which makes role_attribute_strict below completely inert — strict only
+              # denies login when the expression yields NOTHING. Add a fallback back and you
+              # silently re-open Grafana to every user in the realm.
+              role_attribute_path: "contains(resource_access.grafana.roles[*], 'admin') && 'Admin' || contains(resource_access.grafana.roles[*], 'editor') && 'Editor'"
+              # true: a realm user with no `admin`/`editor` role on the grafana CLIENT is
+              # refused, rather than silently provisioned as a Viewer.
+              #
+              # Keycloak omits a client from resource_access entirely when the user holds zero
+              # roles on it — so "no role assigned" and "client absent from the token" are the
+              # same observable thing, and both are denied here.
+              #
+              # Access is now granted ONLY by an explicit Keycloak role assignment. The local
+              # login form (auth.disable_login_form = false above) stays as break-glass.
+              role_attribute_strict: true
               allow_sign_up: true
 
               # PKCE closes the authorization-code interception window; Keycloak supports it
