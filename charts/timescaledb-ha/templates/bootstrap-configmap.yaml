@@ -21,12 +21,15 @@ data:
     # The password arrives as an env var from the Secret, never as an argument — an argument
     # would be visible in `ps` to anything else sharing the pod's PID namespace.
     : "${APP_PASSWORD:?APP_PASSWORD not set - check auth.existingSecret}"
+    {{- if .Values.bootstrap.cdc.enabled }}
+    : "${DEBEZIUM_PASSWORD:?DEBEZIUM_PASSWORD not set - add auth.secretKeys.debeziumPasswordKey to the Secret}"
+    {{- end }}
 
     # One psql session throughout: \connect keeps the host/port/user from CONN, which sidesteps
     # re-parsing the URL. -v app_pass + :'app_pass' is psql's own quoting — concatenating the
     # password into the SQL text would break on any password containing a quote and would land
     # it in the server log.
-    psql "$CONN" -v ON_ERROR_STOP=1 -v app_pass="$APP_PASSWORD" <<'SQL'
+    psql "$CONN" -v ON_ERROR_STOP=1 -v app_pass="$APP_PASSWORD"{{ if .Values.bootstrap.cdc.enabled }} -v dbz_pass="$DEBEZIUM_PASSWORD"{{ end }} <<'SQL'
     -- The application role. pgdog authenticates to the backends AS this role, and with
     -- role = "auto" it polls pg_is_in_recovery() / pg_current_wal_lsn() to work out which node
     -- is primary and how far the replicas lag. pg_monitor guarantees those stay readable no
@@ -46,6 +49,27 @@ data:
     {{- end }}
     {{- range .Values.bootstrap.schemas }}
     CREATE SCHEMA IF NOT EXISTS {{ . | quote }} AUTHORIZATION {{ $.Values.bootstrap.username }};
+    {{- end }}
+    {{- if .Values.bootstrap.cdc.enabled }}
+
+    -- ── CDC principal ─────────────────────────────────────────────────────────
+    -- REPLICATION lets it open a logical replication connection and read the WAL stream.
+    -- Deliberately NOT a superuser, and NOT the `standby` role Patroni uses for physical
+    -- replication — a CDC consumer that can also re-clone the cluster is more authority than
+    -- the job needs.
+    CREATE ROLE {{ .Values.bootstrap.cdc.username }} LOGIN REPLICATION PASSWORD :'dbz_pass';
+
+    -- Group role holding every CDC table grant. debezium inherits them and holds none
+    -- directly, so rotating or adding a CDC principal is one GRANT rather than an audit.
+    CREATE ROLE {{ .Values.bootstrap.cdc.groupRole }} NOLOGIN;
+    GRANT {{ .Values.bootstrap.cdc.groupRole }} TO {{ .Values.bootstrap.cdc.username }};
+    GRANT CONNECT ON DATABASE {{ .Values.bootstrap.database }} TO {{ .Values.bootstrap.cdc.username }};
+
+    -- Empty publication. Add tables explicitly as they appear:
+    --   ALTER PUBLICATION {{ .Values.bootstrap.cdc.publication }} ADD TABLE <schema>.<table>;
+    -- NOT "FOR ALL TABLES": the publication decides what is decoded, but SELECT decides what a
+    -- snapshot can read — an all-tables publication hands the CDC role your whole dataset.
+    CREATE PUBLICATION {{ .Values.bootstrap.cdc.publication }};
     {{- end }}
     {{- with .Values.bootstrap.extraSQL }}
     {{- . | nindent 4 }}

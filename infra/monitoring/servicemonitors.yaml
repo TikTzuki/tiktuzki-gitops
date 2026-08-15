@@ -45,6 +45,19 @@ spec:
         # which reads like an implementation detail in every alert and dashboard.
         - targetLabel: job
           replacement: timescaledb-ha-patroni
+    # postgres_exporter sidecar — the ONLY source of Postgres-internal metrics here. Patroni
+    # exposes none, so without this endpoint every rule in the alerts file's
+    # `timescaledb-ha.replication-slots` group is silently unfirable.
+    #
+    # Same headless Service, second port. One exporter per pod, each reporting on its own node.
+    - port: metrics
+      path: /metrics
+      interval: 30s
+      relabelings:
+        - sourceLabels: [__meta_kubernetes_pod_name]
+          targetLabel: instance
+        - targetLabel: job
+          replacement: timescaledb-ha-postgres
 ---
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor

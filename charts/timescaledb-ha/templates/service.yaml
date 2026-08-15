@@ -21,6 +21,13 @@ spec:
     - name: patroni
       port: {{ .Values.service.restApiPort }}
       targetPort: patroni
+    {{- if .Values.metrics.enabled }}
+    # Scraped per-pod via the headless service, which is why publishNotReadyAddresses matters
+    # here too: a node that is up but not streaming is exactly when its slot metrics matter.
+    - name: metrics
+      port: {{ .Values.metrics.port }}
+      targetPort: metrics
+    {{- end }}
 {{- if .Values.service.primary.enabled }}
 ---
 # Always the current leader. Patroni relabels its own pod `role: master` the instant it

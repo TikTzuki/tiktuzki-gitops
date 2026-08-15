@@ -229,6 +229,82 @@ spec:
               — a leader loss now means a manual recovery. `patronictl resume timescaledb-ha`.
 
     # ─────────────────────────────────────────────────────────────────────────────
+    # Replication slots and WAL retention.
+    #
+    # ⚠️ Every rule in this group needs the postgres_exporter sidecar
+    # (timescaledb-ha values: metrics.enabled). Patroni exposes NO slot metrics at all, so
+    # without the exporter these never fire — which reads as "healthy" rather than "blind".
+    #
+    # Note the two metric families are not interchangeable:
+    #   pg_replication_slot_slot_*  (singular) carries slot_type — use it to isolate logical
+    #   pg_replication_slots_*      (plural)   carries retained bytes but NO slot_type
+    # ─────────────────────────────────────────────────────────────────────────────
+    - name: timescaledb-ha.replication-slots
+      rules:
+        - alert: PostgresLogicalSlotInactive
+          # THE leading indicator for a CDC outage. An inactive logical slot means nothing is
+          # consuming it — connector paused, Debezium redeployed, Kafka down — while Postgres
+          # keeps pinning WAL on its behalf. Everything else in this group is downstream of it.
+          #
+          # Aggregated by slot_name: the exporter runs on all three pods, so an un-aggregated
+          # rule pages up to three times for one slot.
+          expr: max by (slot_name) (pg_replication_slot_slot_is_active{slot_type="logical"}) == 0
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Logical slot {{ $labels.slot_name }} has no consumer"
+            description: >-
+              Nothing is reading this slot, so Postgres is retaining WAL on its behalf and will
+              keep doing so indefinitely. Fix the consumer, or drop the slot if it is orphaned —
+              a slot with no owner never releases WAL on its own.
+
+        - alert: PostgresReplicationSlotRetainingWAL
+          # Covers physical slots too, deliberately: a replica that is down or far behind pins
+          # WAL exactly the same way, and the disk does not care which kind of slot did it.
+          # 4GB against a 20Gi volume leaves room to act.
+          expr: max by (slot_name) (pg_replication_slots_pg_wal_lsn_diff) > 4e9
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Slot {{ $labels.slot_name }} is pinning {{ $value | humanize1024 }}B of WAL"
+            description: >-
+              Retained WAL counts against the 20Gi data volume, and a full PGDATA takes the
+              whole cluster read-only — not just replication. This fires before
+              KubePersistentVolumeFillingUp because it names the cause rather than the symptom.
+
+        - alert: PostgresReplicationSlotLost
+          # wal_status is a LABEL, not a value: reserved | extended | unreserved | lost.
+          # `lost` means Postgres already discarded WAL the slot needed and invalidated it.
+          expr: max by (slot_name) (pg_replication_slot_wal_status{wal_status="lost"}) == 1
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Slot {{ $labels.slot_name }} INVALIDATED — WAL already discarded"
+            description: >-
+              The slot exceeded max_slot_wal_keep_size and Postgres dropped the WAL it needed.
+              A logical slot in this state cannot resume: Debezium must re-snapshot. A physical
+              slot means that replica needs a full re-clone. This is the intended trade — an
+              invalidated slot is recoverable, a full volume is an outage — but it is not free.
+
+        - alert: PostgresSlotWalKeepSizeUnbounded
+          # A configuration alert, not a runtime one. -1 means unlimited: nothing stops a stuck
+          # slot from filling the volume, and PostgresReplicationSlotLost can never fire because
+          # Postgres will never invalidate a slot to save itself.
+          expr: max(pg_settings_max_slot_wal_keep_size_bytes) == -1
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: "max_slot_wal_keep_size is unlimited"
+            description: >-
+              With -1 there is no ceiling on slot-retained WAL. Set a bound via
+              `patronictl edit-config` (4GB against this 20Gi volume) so Postgres invalidates a
+              stuck slot instead of filling PGDATA.
+
+    # ─────────────────────────────────────────────────────────────────────────────
     # Informational — no action needed, but you want to know it happened.
     # ─────────────────────────────────────────────────────────────────────────────
     - name: timescaledb-ha.events

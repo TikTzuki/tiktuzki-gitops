@@ -48,6 +48,9 @@ auth:
     appPasswordKey: "app-password"
   superuserUsername: postgres
   replicationUsername: standby
+  # Optional. Only read when bootstrap.cdc.enabled — the key must exist in the Secret or the
+  # pods CrashLoop on a missing secretKeyRef.
+  debeziumPasswordKey: "debezium-password"
 
 # ─── Bootstrap (runs ONCE, on the first leader, right after initdb) ──────────────────
 # Replicas are cloned from the leader with pg_basebackup, so everything created here is
@@ -64,6 +67,23 @@ bootstrap:
   # CREATE EXTENSION timescaledb in the application database. The extension is per-database,
   # not per-cluster — a fresh database without this is plain Postgres.
   createExtension: true
+  # Change Data Capture principal, for Debezium or any other logical-decoding consumer.
+  #
+  # ⚠️ Like everything under bootstrap, this runs ONCE via post_init. Enabling it on a cluster
+  # that has already bootstrapped does nothing — apply the same SQL by hand against the current
+  # leader (see README, "Setting up a Debezium user").
+  cdc:
+    enabled: false
+    username: debezium
+    # Group role that actually holds the table grants. `debezium` inherits them and holds none
+    # directly, so adding or rotating a CDC principal is one GRANT rather than an audit of
+    # every schema.
+    groupRole: cdc_reader
+    # Publication Debezium subscribes to. Created empty; add tables as they appear.
+    # FOR ALL TABLES is deliberately NOT the default — it would stream every business table,
+    # and SELECT on a publication's tables is what a snapshot can read.
+    publication: dbz_publication
+
   # Extra SQL appended to the post-init hook, run as superuser against the app database.
   extraSQL: ""
 
@@ -293,6 +313,37 @@ haproxy:
     limits:
       cpu: 300m
       memory: 256Mi
+
+# ─── postgres_exporter ───────────────────────────────────────────────────────────────
+# Postgres internals Patroni does not expose: replication slots, WAL retention, table sizes,
+# connection counts, transaction age.
+#
+# A SIDECAR, not a Deployment, and that is the whole point. Metrics must be attributable to a
+# specific node, so each exporter connects to its OWN pod over localhost. Routed through pgdog
+# or HAProxy instead, a pooled connection reports whichever backend it happened to land on and
+# every series is attributed to the wrong node.
+#
+# It authenticates as the application role, which already holds pg_monitor (granted for pgdog's
+# topology polling). That is exactly the privilege postgres_exporter needs. The trade is that
+# the exporter also inherits the app role's data access — create a dedicated NOLOGIN-derived
+# `pgmon` role with only pg_monitor if you want least privilege.
+metrics:
+  enabled: false
+  image:
+    repository: quay.io/prometheuscommunity/postgres-exporter
+    tag: "v0.17.1"
+    pullPolicy: IfNotPresent
+  port: 9187
+  # Off: the exporter would otherwise enumerate every database on every scrape, which on a
+  # cluster with one app database is pure overhead.
+  autoDiscoverDatabases: false
+  resources:
+    requests:
+      cpu: 20m
+      memory: 32Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
 
 # ─── Patroni pod resources / scheduling ──────────────────────────────────────────────
 resources:

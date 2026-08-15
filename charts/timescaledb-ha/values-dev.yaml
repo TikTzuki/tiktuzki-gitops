@@ -72,3 +72,8 @@ pgdog:
 
 haproxy:
   enabled: true
+
+# postgres_exporter sidecar — replication slots, WAL retention, table sizes. Without it there
+# are NO Postgres-internal metrics at all: Patroni exposes cluster topology only.
+metrics:
+  enabled: true

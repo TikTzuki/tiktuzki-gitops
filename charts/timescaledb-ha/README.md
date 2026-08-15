@@ -148,6 +148,117 @@ standby   → pod-to-pod :5432                     (Patroni's business, not your
 never through pgdog or HAProxy. A pooled connection reports whichever backend it happened to
 land on, so the metrics get attributed to the wrong node — one exporter per node, direct.
 
+## Setting up a Debezium user
+
+⚠️ **`bootstrap.cdc.enabled` will not help on this cluster.** Everything under `bootstrap` runs
+in `post_init`, which fires once, on the first leader, and has already fired. The value exists
+so a rebuilt cluster reproduces this setup — for the live one, apply the same SQL by hand.
+
+### 1. The role
+
+Run against the **current leader** (`kubectl get pods -l cluster-name=timescaledb-ha -L role`):
+
+```sql
+-- REPLICATION is what allows a logical replication connection. Deliberately NOT superuser,
+-- and NOT the `standby` role Patroni uses — a CDC consumer that can also re-clone the
+-- cluster has more authority than the job needs.
+CREATE ROLE debezium LOGIN REPLICATION PASSWORD '<sealed-value>';
+
+-- Group role holds the table grants; debezium inherits and holds none directly, so adding or
+-- rotating a CDC principal is one GRANT rather than an audit of every schema.
+CREATE ROLE cdc_reader NOLOGIN;
+GRANT cdc_reader TO debezium;
+GRANT CONNECT ON DATABASE app TO debezium;
+
+-- Per captured table — NOT "GRANT SELECT ON ALL TABLES" and not DEFAULT PRIVILEGES. The
+-- publication decides what is decoded, but SELECT decides what a snapshot can read.
+GRANT USAGE ON SCHEMA <schema> TO cdc_reader;
+GRANT SELECT ON <schema>.<table> TO cdc_reader;
+ALTER TABLE <schema>.<table> REPLICA IDENTITY FULL;   -- Debezium needs the old row for UPDATE/DELETE
+
+CREATE PUBLICATION dbz_publication;
+ALTER PUBLICATION dbz_publication ADD TABLE <schema>.<table>;
+```
+
+`REPLICA IDENTITY FULL` is metadata-only — no table rewrite — but without it Debezium cannot
+serialize the "before" image of updates and deletes.
+
+**No pg_hba change is needed.** The rule `host replication standby ...` covers *physical*
+replication only; a **logical** decoding connection matches the ordinary database entry, which
+`host all all 0.0.0.0/0 scram-sha-256` already provides.
+
+### 2. Connect through HAProxy, never pgdog
+
+| | |
+|---|---|
+| in-cluster | `timescaledb-ha-haproxy.database.svc.cluster.local:5000` |
+| via node1 | `:5433` |
+
+Logical decoding speaks the streaming-replication protocol, which a transaction-mode pooler
+does not proxy — pgdog cannot carry this connection at all. HAProxy is raw TCP passthrough and
+health-checks Patroni's `/primary`, so it follows a failover and severs the old connection
+(`on-marked-down shutdown-sessions`) instead of leaving Debezium attached to a demoted node.
+
+### 3. ⚠️ Make the slot survive failover
+
+This is the part that quietly breaks CDC. A logical replication slot lives on one node. When
+Patroni promotes a different node, the slot is not there, and Debezium fails and re-snapshots.
+
+Postgres here is **17.10**, which supports failover slots — but three settings currently work
+against it:
+
+```
+sync_replication_slots = off      hot_standby_feedback = off      max_slot_wal_keep_size = -1
+```
+
+Declare the slot to Patroni so it maintains and copies it, and turn on slot sync:
+
+```bash
+kubectl -n database exec -it timescaledb-ha-1 -- patronictl edit-config
+```
+
+```yaml
+slots:
+  debezium_slot:
+    type: logical
+    database: app
+    plugin: pgoutput
+postgresql:
+  parameters:
+    sync_replication_slots: "on"
+    hot_standby_feedback: "on"       # required for slot sync to work
+    max_slot_wal_keep_size: "4GB"    # see below
+```
+
+Declaring the slot in Patroni also stops Patroni from treating it as unknown. Then point
+Debezium at `slot.name=debezium_slot` rather than letting it create its own.
+
+Mirror these into `values.yaml` `patroni.parameters` by hand — the DCS is the live source of
+truth once a cluster exists, so the two drift silently otherwise.
+
+### 4. ⚠️ An inactive slot will fill the volume
+
+`max_slot_wal_keep_size = -1` means unlimited. A slot whose consumer is stopped — connector
+paused, Debezium redeployed, Kafka down — pins WAL forever, and the data volume is **20Gi**. A
+full PGDATA takes the whole cluster read-only, not just CDC.
+
+Bounding it at `4GB` makes Postgres invalidate the slot instead of filling the disk. That trade
+is deliberate: an invalidated slot means Debezium must re-snapshot, which is recoverable; a full
+volume is an outage. Watch it:
+
+```sql
+SELECT slot_name, active,
+       pg_size_pretty(pg_wal_lsn_diff(pg_current_wal_lsn(), restart_lsn)) AS retained
+FROM pg_replication_slots WHERE slot_type = 'logical';
+```
+
+Alert on `active = false` on a logical slot — that is the leading indicator.
+
+### 5. The password
+
+Add a `debezium-password` key to `timescaledb-ha-secret` (see `infra/sealed-secrets`), then set
+`auth.secretKeys.debeziumPasswordKey` so a rebuilt cluster picks it up automatically.
+
 ## Operating it
 
 ```bash
