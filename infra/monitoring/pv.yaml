@@ -61,6 +61,12 @@ spec:
     - ReadWriteOnce
   persistentVolumeReclaimPolicy: Retain
   storageClassName: monitoring-prometheus-local
+  # Pre-bound by name, with NO uid — see the grafana PV below for why this matters.
+  claimRef:
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+    namespace: monitoring
+    name: prometheus-monitoring-kube-prometheus-prometheus-db-prometheus-monitoring-kube-prometheus-prometheus-0
   local:
     path: /home/tik/data/monitoring/prometheus
   nodeAffinity:
@@ -86,6 +92,27 @@ spec:
     - ReadWriteOnce
   persistentVolumeReclaimPolicy: Retain
   storageClassName: monitoring-grafana-local
+  # ⚠️ claimRef WITHOUT a uid. This is what makes the volume survive PVC recreation, and it is
+  # not optional here.
+  #
+  # A claimRef carrying a uid binds to one specific PVC object. The moment that object is
+  # deleted and recreated — an Argo re-sync, a chart upgrade, editing persistence.size — the
+  # replacement has the same name but a NEW uid, the PV stays `Released` holding the dead uid,
+  # and nothing can ever bind to it again. Symptom: PVC Pending forever and the pod stuck on
+  #   FailedScheduling: 1 node(s) didn't find available persistent volumes to bind
+  # while the pod is repeatedly recreated, which reads like a crash loop but is not one.
+  #
+  # Omitting claimRef entirely (what this file did before) is just as bad: the PV binds to
+  # whichever PVC claims it first, Kubernetes fills in that uid, and you are back to the above
+  # on the first recreation.
+  #
+  # namespace + name and NO uid means "reserved for any PVC with this name" — it re-binds to
+  # each new generation automatically.
+  claimRef:
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+    namespace: monitoring
+    name: monitoring-grafana
   local:
     path: /home/tik/data/monitoring/grafana
   nodeAffinity:
