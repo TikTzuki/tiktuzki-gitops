@@ -67,7 +67,7 @@ kafkaUi:
       userNameAttribute: preferred_username
       # `groups` is what carries authorization — without the scope the claim is absent, every
       # role below matches nothing, and RBAC silently denies everyone.
-      scope: "openid,profile,email,groups"
+      scope: "openid profile email groups"
       issuerUri: https://keycloak.tiktuzki.com/realms/homelab
       allowedDomain: ""            # google-only; ignored for keycloak
       existingSecret: kafka-ui-oauth
