@@ -22,11 +22,22 @@ bootstrap:
   schemas: []
 
 patroni:
-  # Homelab: trade some safety for a visibly faster failover. Patroni enforces
-  # ttl >= loop_wait + 2 * retry_timeout, so 20 >= 5 + 2*5 holds exactly.
-  ttl: 20
-  loopWait: 5
-  retryTimeout: 5
+  # Back to upstream defaults. 20/5/5 was set to make failover visibly faster, but it leaves
+  # only 5s of margin over `ttl >= loop_wait + 2*retry_timeout` (15s). Anything that stalls
+  # Patroni's loop then expires the leader lease and triggers a promotion — which is exactly
+  # what happened when Patroni and Debezium fought over an undeclared slot: "Loop time
+  # exceeded", lease lost, 6 promotions an hour.
+  ttl: 30
+  loopWait: 10
+  retryTimeout: 10
+
+  # Permanent logical slot for the fnb CDC connector. MUST match Debezium's `slot.name`.
+  # Without this Patroni drops it as an unknown slot on every loop.
+  slots:
+    fnb_cdc_slot:
+      type: logical
+      database: fnb
+      plugin: pgoutput
   parameters:
     shared_preload_libraries: "timescaledb"
     timescaledb.telemetry_level: "off"
@@ -37,6 +48,17 @@ patroni:
     max_connections: "300"
     hot_standby: "on"
     wal_log_hints: "on"
+    # Required for logical-slot failover. Patroni refuses to sync logical slots without it and
+    # logs "Logical slot failover requires hot_standby_feedback" on every loop. Costs some
+    # vacuum aggressiveness on the primary — the price of durable slots.
+    hot_standby_feedback: "on"
+    # PG17 native slot sync: copies logical slots to replicas so a promotion does not orphan
+    # them and the consumer resumes instead of re-snapshotting.
+    sync_replication_slots: "on"
+    # ⚠️ -1 (the default) means unlimited: a slot whose consumer stops pins WAL forever and
+    # fills the 20Gi volume, which takes the whole cluster read-only. Bounded, Postgres
+    # invalidates the slot instead — a re-snapshot is recoverable, a full volume is an outage.
+    max_slot_wal_keep_size: "4GB"
 
 persistence:
   enabled: true

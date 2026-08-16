@@ -123,6 +123,24 @@ patroni:
   # A replica lagging more than this many bytes is not a failover candidate.
   maximumLagOnFailover: 33554432
 
+  # Permanent replication slots Patroni creates, maintains and copies across a failover.
+  #
+  # ⚠️ Any logical slot NOT listed here is treated as unknown and DROPPED — including one a
+  # consumer created for itself. Debezium then recreates it, Patroni drops it again, and the
+  # loop disrupts Patroni enough to expire the leader lease and trigger promotions.
+  #
+  # Key = slot name, and it must match the consumer's configured slot name exactly.
+  #
+  #   slots:
+  #     fnb_cdc_slot:
+  #       type: logical
+  #       database: fnb
+  #       plugin: pgoutput
+  #
+  # Logical slots additionally require hot_standby_feedback: "on" below — Patroni refuses to
+  # sync them without it and logs the refusal every loop.
+  slots: {}
+
   # Synchronous replication. Off by default: it trades write latency (and availability, if no
   # replica is caught up) for zero data loss on failover. Turn it on for anything financial.
   synchronousMode: false

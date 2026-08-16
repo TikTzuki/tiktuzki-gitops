@@ -66,6 +66,25 @@ data:
         synchronous_mode: true
         synchronous_mode_strict: {{ .Values.patroni.synchronousModeStrict }}
         {{- end }}
+        {{- with .Values.patroni.slots }}
+        # ─── Permanent replication slots ────────────────────────────────────────
+        # ⚠️ Declaring a slot here is what stops Patroni DELETING it. Patroni manages slots
+        # (use_slots: true) and drops any it does not recognise — so a slot created directly by
+        # Debezium is removed within seconds, Debezium recreates it, and the pair fight in a
+        # loop. Observed: "Trying to drop unknown replication slot 'fnb_cdc_slot'" every cycle,
+        # followed by "Loop time exceeded", an expired leader lease, and a promotion. Six per
+        # hour, each one an outage for the connector.
+        #
+        # Declared slots are also COPIED to replicas, so a promotion no longer orphans the slot
+        # and the consumer resumes instead of re-snapshotting.
+        #
+        # The key must match Debezium's `slot.name` exactly.
+        slots:
+          {{- range $name, $cfg := . }}
+          {{ $name }}:
+            {{- toYaml $cfg | nindent 12 }}
+          {{- end }}
+        {{- end }}
         postgresql:
           use_pg_rewind: true
           # Replication slots, so a replica that falls behind can still catch up instead of
