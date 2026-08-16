@@ -144,6 +144,22 @@ spec:
               value: {{ .Values.scope | quote }}
             - name: PATRONI_KUBERNETES_NAMESPACE
               value: "$(POD_NAMESPACE)"
+            # Not needed by the Patroni process itself (patroni.yaml already carries this), but
+            # patronictl WITHOUT -c builds its DCS config purely from PATRONI_* env vars. It
+            # sees PATRONI_KUBERNETES_NAMESPACE, infers the Kubernetes DCS, then dies on the
+            # missing labels key:
+            #
+            #   File ".../patroni/dcs/kubernetes.py", line 755, in __init__
+            #     self._labels = deepcopy(config['labels'])
+            #   KeyError: 'labels'
+            #
+            # Setting it here makes plain `patronictl list` / `edit-config` work, which matters
+            # because edit-config is the ONLY way to change DCS-managed settings on a running
+            # cluster. Must match kubernetes.labels in patroni.yaml.
+            - name: PATRONI_KUBERNETES_LABELS
+              value: '{cluster-name: {{ .Values.scope }}}'
+            - name: PATRONI_KUBERNETES_SCOPE_LABEL
+              value: cluster-name
             - name: PATRONI_KUBERNETES_POD_IP
               value: "$(POD_IP)"
             # Stable pod DNS, not the pod IP: this is the address replicas put in
