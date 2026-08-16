@@ -58,13 +58,23 @@ persistence:
 
 # 3 × (500m / 1Gi) requests on top of what node1 already runs (~1.9 CPU / 3.5Gi of 16 CPU /
 # 15Gi). Comfortable on requests; the limits are what to watch if more services land here.
+# Sized from measurement: 24h peak working set was 149-176Mi per node.
+#
+# ⚠️ 1Gi, NOT 256Mi, despite that peak — the databases are currently EMPTY, so the measurement
+# is an idle one and not representative. Once there is data, shared_buffers and real query
+# concurrency (max_connections: 300) push this up substantially. Sizing from idle numbers is
+# exactly how Grafana got OOMKilled at a 255Mi peak against a 256Mi limit.
+#
+# Re-measure under real load before cutting further:
+#   max by (pod) (max_over_time(container_memory_working_set_bytes{
+#     namespace="database",container="timescaledb"}[7d]))
 resources:
   requests:
-    cpu: 500m
-    memory: 1Gi
+    cpu: 250m
+    memory: 384Mi
   limits:
     cpu: "1"
-    memory: 2Gi
+    memory: 1Gi
 
 # Soft — see values.yaml. There is only one node, so a hard rule would leave two pods Pending.
 podAntiAffinity:

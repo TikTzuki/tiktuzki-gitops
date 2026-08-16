@@ -295,13 +295,15 @@ pgdog:
     database: admin
     passwordKey: "pgdog-admin-password"
 
+  # 24h peak working set: 15Mi. 256Mi is ~17x that, which is ample — pgdog's footprint scales
+  # with pool count (default_pool_size x nodes x users), not with query volume.
   resources:
     requests:
       cpu: 100m
-      memory: 128Mi
+      memory: 64Mi
     limits:
       cpu: 500m
-      memory: 512Mi
+      memory: 256Mi
 
 # ─── HAProxy — a stable "always the current primary" TCP endpoint ────────────────────
 # For clients that CANNOT go through pgdog. The main one is Debezium: logical decoding speaks
@@ -331,13 +333,15 @@ haproxy:
   # Long, because a logical replication stream is a long-lived connection.
   timeoutClient: 30m
   timeoutServer: 30m
+  # 24h peak working set: 20Mi. HAProxy's memory is bounded by `maxconn` and is very
+  # predictable — it does not grow with traffic the way a pooler or a JVM does.
   resources:
     requests:
       cpu: 50m
-      memory: 64Mi
+      memory: 32Mi
     limits:
       cpu: 300m
-      memory: 256Mi
+      memory: 128Mi
 
 # ─── postgres_exporter ───────────────────────────────────────────────────────────────
 # Postgres internals Patroni does not expose: replication slots, WAL retention, table sizes,
