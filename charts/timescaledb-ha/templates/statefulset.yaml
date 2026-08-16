@@ -68,6 +68,44 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      initContainers:
+        # ⚠️ Load-bearing. podSecurityContext.fsGroup makes kubelet re-apply group permissions
+        # to the volume on EVERY pod start, leaving PGDATA as 0770. Postgres accepts only 0700
+        # or 0750 and refuses to start:
+        #
+        #   FATAL: data directory "/var/lib/postgresql/data/pgdata" has invalid permissions
+        #   DETAIL: Permissions should be u=rwx (0700) or u=rwx,g=rx (0750).
+        #
+        # Patroni does not crash on this — it retries forever, so the pod stays Running with 0
+        # restarts and only `patronictl list` shows "start failed". It follows whichever pod
+        # restarted most recently, so the broken node appears to move around the cluster, and
+        # each occurrence triggers a promotion. Observed: timeline 13 -> 30 in ~20 minutes.
+        #
+        # Runs after kubelet's fsGroup pass and before Postgres, so it always corrects. No root
+        # needed: the directory is owned by this UID, and an owner may chmod its own directory.
+        - name: fix-pgdata-perms
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - sh
+            - -c
+            # -d guard: on a first bootstrap PGDATA does not exist yet (initdb creates it with
+            # the right mode), so this must not fail there.
+            - 'if [ -d "{{ .Values.dataDir }}" ]; then chmod 0700 "{{ .Values.dataDir }}"; fi'
+          {{- with .Values.containerSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 32Mi
+          volumeMounts:
+            - name: data
+              mountPath: {{ .Values.persistence.mountPath }}
       containers:
         - name: timescaledb
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"

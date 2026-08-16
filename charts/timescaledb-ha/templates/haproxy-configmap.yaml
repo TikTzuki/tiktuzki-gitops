@@ -25,6 +25,24 @@ data:
         # Log to stdout so `kubectl logs` works; the container has no syslog socket.
         log stdout format raw local0 info
 
+    # ⚠️ Without this section HAProxy resolves each `server` hostname ONCE, at config parse
+    # time, and caches the IP for the life of the process. Pod IPs change on every recreate, so
+    # after any StatefulSet roll HAProxy health-checks addresses that no longer exist and marks
+    # every backend DOWN with "Layer4 timeout" — while DNS resolves correctly and Patroni
+    # answers 200 from inside the very same pod. Both :5433 and :5434 then serve nothing.
+    resolvers kube-dns
+        # Reads the pod's own /etc/resolv.conf rather than hardcoding the cluster DNS IP.
+        parse-resolv-conf
+        resolve_retries 3
+        timeout resolve 1s
+        timeout retry 1s
+        # Re-resolve often: a pod recreate should be picked up in seconds.
+        hold valid 10s
+        hold other 10s
+        hold refused 10s
+        hold nx 10s
+        hold timeout 10s
+
     defaults
         mode               tcp
         log                global
@@ -43,7 +61,7 @@ data:
         # connections immediately instead of leaving Debezium attached to a demoted node. This
         # is the one behaviour a plain Kubernetes Service cannot provide — removing a pod from
         # Endpoints does not touch ESTABLISHED sockets.
-        default-server inter 3s fall 3 rise 2 on-marked-down shutdown-sessions
+        default-server inter 3s fall 3 rise 2 on-marked-down shutdown-sessions resolvers kube-dns resolve-prefer ipv4 init-addr last,libc,none
         {{- range $i := until (int .Values.replicaCount) }}
         server {{ include "tsha.fullname" $ }}-{{ $i }} {{ include "tsha.fullname" $ }}-{{ $i }}.{{ include "tsha.headlessServiceName" $ }}.{{ $.Release.Namespace }}.svc.cluster.local:5432 maxconn 100 check port {{ $.Values.service.restApiPort }}
         {{- end }}
@@ -54,7 +72,7 @@ data:
         option httpchk GET /replica
         http-check expect status 200
         balance roundrobin
-        default-server inter 3s fall 3 rise 2 on-marked-down shutdown-sessions
+        default-server inter 3s fall 3 rise 2 on-marked-down shutdown-sessions resolvers kube-dns resolve-prefer ipv4 init-addr last,libc,none
         {{- range $i := until (int .Values.replicaCount) }}
         server {{ include "tsha.fullname" $ }}-{{ $i }} {{ include "tsha.fullname" $ }}-{{ $i }}.{{ include "tsha.headlessServiceName" $ }}.{{ $.Release.Namespace }}.svc.cluster.local:5432 maxconn 100 check port {{ $.Values.service.restApiPort }}
         {{- end }}
