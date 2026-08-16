@@ -72,6 +72,7 @@ kubectl create secret generic timescaledb-ha-secret \
   --from-literal=replication-password="$(openssl rand -base64 24)" \
   --from-literal=app-password="$(openssl rand -base64 24)" \
   --from-literal=pgdog-admin-password="$(openssl rand -base64 24)" \
+  --from-literal=debezium-password="$(openssl rand -base64 24)" \
   --dry-run=client -o yaml \
 | kubeseal --controller-namespace sealed-secrets \
            --controller-name sealed-secrets-controller \

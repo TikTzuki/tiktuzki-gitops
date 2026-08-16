@@ -60,11 +60,9 @@ auth:
     superuserPasswordKey: "superuser-password"
     replicationPasswordKey: "replication-password"
     appPasswordKey: "app-password"
+    debeziumPasswordKey: "debezium-password"
   superuserUsername: postgres
   replicationUsername: standby
-  # Optional. Only read when bootstrap.cdc.enabled — the key must exist in the Secret or the
-  # pods CrashLoop on a missing secretKeyRef.
-  debeziumPasswordKey: "debezium-password"
 
 # ─── Bootstrap (runs ONCE, on the first leader, right after initdb) ──────────────────
 # Replicas are cloned from the leader with pg_basebackup, so everything created here is
