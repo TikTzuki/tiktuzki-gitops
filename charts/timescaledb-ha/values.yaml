@@ -20,8 +20,22 @@ image:
   # Timescale-licensed features (compression policies, continuous-aggregate refresh policies);
   # -all adds PostGIS and the Toolkit. Pick deliberately — switching between them later is a
   # dump/restore, not a rolling restart.
+  #
+  # ⚠️ The pg<NN> part is a MAJOR version and cannot be rolled forward by editing this tag.
+  # PGDATA is written in a version-specific on-disk format, so a PG18 binary on a PG17 data
+  # directory refuses to start:
+  #
+  #   FATAL: database files are incompatible with server
+  #   The data directory was initialized by PostgreSQL version 17, which is not compatible
+  #   with this version 18.
+  #
+  # Patroni does not upgrade anything — it will simply restart the pod forever. Changing this
+  # value requires either pg_upgrade, a dump/restore, or a wipe and re-bootstrap.
+  # See README, "Upgrading the Postgres major version".
+  #
+  # The minor version (18.4) and the TimescaleDB version (2.29.1) DO roll forward normally.
   repository: timescale/timescaledb-ha
-  tag: "pg17.10-ts2.29.1-oss"
+  tag: "pg18.4-ts2.29.1-oss"
   pullPolicy: IfNotPresent
 
 # Number of Patroni nodes. 3 is the smallest count that survives losing one node while still
@@ -79,10 +93,23 @@ bootstrap:
     # directly, so adding or rotating a CDC principal is one GRANT rather than an audit of
     # every schema.
     groupRole: cdc_reader
-    # Publication Debezium subscribes to. Created empty; add tables as they appear.
-    # FOR ALL TABLES is deliberately NOT the default — it would stream every business table,
-    # and SELECT on a publication's tables is what a snapshot can read.
+    # Publication Debezium subscribes to.
     publication: dbz_publication
+    # Schemas the publication covers (PG15+ `FOR TABLES IN SCHEMA`) — future tables in those
+    # schemas are included automatically. Empty = an empty publication you populate with
+    # ALTER PUBLICATION ... ADD TABLE.
+    #
+    # ⚠️ Any table in a publication that replicates updates/deletes MUST have a replica
+    # identity. A table with no primary key and no explicit REPLICA IDENTITY makes UPDATE and
+    # DELETE fail outright — that breaks the application, not just the connector.
+    publicationSchemas: []
+    # GRANT pg_read_all_data TO <groupRole>: one line instead of per-schema grants plus
+    # ALTER DEFAULT PRIVILEGES, and it covers tables that do not exist yet.
+    #
+    # ⚠️ pg_read_all_data is CLUSTER-wide, not per-database — SELECT on every table in every
+    # database, including ones added later. Set false and grant per schema if you need the
+    # boundary at one database (see README, "Setting up a Debezium user").
+    readAllData: true
 
   # Extra SQL appended to the post-init hook, run as superuser against the app database.
   extraSQL: ""

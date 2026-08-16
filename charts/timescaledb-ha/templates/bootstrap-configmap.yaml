@@ -69,7 +69,26 @@ data:
     --   ALTER PUBLICATION {{ .Values.bootstrap.cdc.publication }} ADD TABLE <schema>.<table>;
     -- NOT "FOR ALL TABLES": the publication decides what is decoded, but SELECT decides what a
     -- snapshot can read — an all-tables publication hands the CDC role your whole dataset.
+    {{- if .Values.bootstrap.cdc.readAllData }}
+
+    -- Database-wide read for the group role. pg_read_all_data is a PG14+ predefined role
+    -- covering every table in every schema, existing and future — no per-table GRANT and no
+    -- ALTER DEFAULT PRIVILEGES bookkeeping (which is easy to get wrong: it only applies to
+    -- objects created by the role named in FOR ROLE, not by whoever runs it).
+    --
+    -- Note it is CLUSTER-wide, not scoped to this database.
+    GRANT pg_read_all_data TO {{ .Values.bootstrap.cdc.groupRole }};
+    {{- end }}
+    {{- if .Values.bootstrap.cdc.publicationSchemas }}
+
+    -- FOR TABLES IN SCHEMA (PG15+): future tables in these schemas are included automatically.
+    CREATE PUBLICATION {{ .Values.bootstrap.cdc.publication }} FOR TABLES IN SCHEMA {{ join ", " .Values.bootstrap.cdc.publicationSchemas }};
+    {{- else }}
+
+    -- Empty publication. Populate with:
+    --   ALTER PUBLICATION {{ .Values.bootstrap.cdc.publication }} ADD TABLE <schema>.<table>;
     CREATE PUBLICATION {{ .Values.bootstrap.cdc.publication }};
+    {{- end }}
     {{- end }}
     {{- with .Values.bootstrap.extraSQL }}
     {{- . | nindent 4 }}

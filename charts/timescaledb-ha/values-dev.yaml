@@ -9,6 +9,14 @@ bootstrap:
   database: app
   username: app
   createExtension: true
+  # Creates the debezium / cdc_reader roles and the publication during post_init.
+  #
+  # ⚠️ Only takes effect on a FRESH bootstrap — post_init runs once, ever. Enabled here to be
+  # picked up by the PG18 wipe-and-re-bootstrap; on an already-running cluster it does nothing.
+  # Requires the debezium-password key in timescaledb-ha-secret, or every pod CrashLoops on the
+  # missing secretKeyRef.
+  cdc:
+    enabled: true
   # One schema per service, mirroring the compose stack's schema-per-service layout. Add to
   # this list BEFORE the first install — post_init runs once and never again.
   schemas: []

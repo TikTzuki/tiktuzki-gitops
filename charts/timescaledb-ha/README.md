@@ -319,6 +319,54 @@ This is a genuine gap in the GitOps story — the DCS, not Git, is the source of
 once the cluster exists. Keep values.yaml in sync by hand so a rebuild starts from the right
 place.
 
+## Upgrading the Postgres major version
+
+⚠️ **Editing `image.tag` from `pg17` to `pg18` does not upgrade anything.** PGDATA is written in
+a version-specific on-disk format, so the new binary refuses to start on the old data directory:
+
+```
+FATAL: database files are incompatible with server
+The data directory was initialized by PostgreSQL version 17, which is not compatible
+with this version 18.
+```
+
+Patroni does not upgrade Postgres — it restarts the pod, sees the same failure, and loops.
+Every node fails identically, so this is a full outage, not a degraded cluster.
+
+The minor version (`18.4`) and the TimescaleDB version (`2.29.1`) *do* roll forward on a
+restart. Only the `pg<NN>` part is a one-way door.
+
+### Choosing a path
+
+| Data | Approach |
+|---|---|
+| None / disposable | Wipe and re-bootstrap (below) |
+| Small enough for downtime | `pg_dump` → wipe → `pg_restore` |
+| Must stay online | Logical replication into a new PG18 cluster, then cut over |
+
+`pg_upgrade` is the usual in-place answer, but it is awkward under Patroni: it must run on a
+stopped cluster with both binaries present, and Patroni will try to restart or fail over the
+node while you work. The dump/restore or logical-replication paths avoid fighting the
+orchestrator.
+
+### Wipe and re-bootstrap (this cluster, 17 → 18.4)
+
+Verified before recommending: `app` and `ewallet` both contain **zero user tables** — the ~9MB
+each is catalog plus the TimescaleDB extension. There is nothing to migrate.
+
+1. Set `image.tag: "pg18.4-ts2.29.1-oss"` (already done) — same `-oss` variant, same
+   TimescaleDB 2.29.1, so the extension needs no `ALTER EXTENSION ... UPDATE`.
+2. Follow "Wiping and re-bootstrapping" below **in full**. Deleting the PVCs without also
+   deleting the `timescaledb-ha-*` DCS ConfigMaps is the classic deadlock.
+3. Clear the node directories — a leftover PG17 PGDATA reproduces the exact error above:
+   `sudo rm -rf /home/tik/data/timescaledb-ha/*/*`
+
+**Worth taking the opportunity:** re-bootstrapping is the only time `post_init` runs again. If
+`bootstrap.cdc.enabled: true` is set before the wipe, the `debezium` / `cdc_reader` roles and
+the publication get created automatically instead of being applied by hand — the gap described
+in "Setting up a Debezium user". The `debezium-password` key must exist in the Secret first, or
+every pod CrashLoops on the missing `secretKeyRef`.
+
 ## Wiping and re-bootstrapping
 
 `bootstrap.post_init` runs once, ever. To re-run it (e.g. after changing `bootstrap.schemas`)
