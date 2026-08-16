@@ -3,6 +3,15 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: {{ include "kafka.ui.fullname" . }}
+  annotations:
+    # Restart this Deployment when a Secret or ConfigMap it references changes.
+    #
+    # Not cosmetic: kafka-ui reads its OAuth client secret through secretKeyRef as an ENV VAR,
+    # and env vars are captured at container start and never refresh. Re-sealing the secret
+    # updated the Secret while the running pod kept presenting the old value — Keycloak
+    # rejected the token exchange with invalid_client_credentials, which reads as a login
+    # failure rather than a stale-config problem. Reloader closes that gap.
+    reloader.stakater.com/auto: "true"
   labels:
     {{- include "kafka.ui.labels" . | nindent 4 }}
 spec:

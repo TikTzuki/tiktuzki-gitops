@@ -4,6 +4,10 @@ kind: Deployment
 metadata:
   name: {{ include "tsha.pgdog.fullname" . }}
   namespace: {{ .Release.Namespace }}
+  annotations:
+    # pgdog's users.toml is rendered from the Secret by an init container at pod start, so a
+    # rotated password only takes effect on restart. Stateless Deployment — safe to bounce.
+    reloader.stakater.com/auto: "true"
   labels:
     {{- include "tsha.pgdog.labels" . | nindent 4 }}
 spec:

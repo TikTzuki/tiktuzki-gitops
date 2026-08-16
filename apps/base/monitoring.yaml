@@ -61,6 +61,12 @@ spec:
         # ─── Grafana ───────────────────────────────────────────────────────────────
         grafana:
           enabled: true
+          # Deployment annotations (not pod annotations) — Reloader watches the workload object.
+          # Grafana reads grafana-admin-secret and grafana-oauth-secret; the OIDC client secret
+          # arrives via $__file{} from a mounted Secret, which does refresh on disk, but Grafana
+          # only reads it at startup. Re-sealing either one needed a manual restart before this.
+          annotations:
+            reloader.stakater.com/auto: "true"
           # Credentials come from a SealedSecret, never from this file.
           # Keys: admin-user, admin-password.
           admin:

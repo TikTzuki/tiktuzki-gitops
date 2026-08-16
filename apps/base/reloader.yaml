@@ -1,0 +1,65 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: reloader
+  namespace: devops
+spec:
+  destination:
+    namespace: reloader
+    server: https://kubernetes.default.svc
+  source:
+    # Upstream Helm repo (not a local chart) — same pattern as sealed-secrets and monitoring.
+    repoURL: https://stakater.github.io/stakater-charts
+    chart: reloader
+    # Pinned. `helm search repo stakater/reloader --versions | head` before bumping.
+    targetRevision: 2.2.16
+    helm:
+      releaseName: reloader
+      valuesObject:
+        reloader:
+          # ─── Opt-in, NOT global ──────────────────────────────────────────────────
+          # `reloadStrategy: annotations` + no auto-reload-all means Reloader restarts ONLY
+          # workloads carrying reloader.stakater.com/auto: "true".
+          #
+          # The alternative (watch everything) turns any ConfigMap edit anywhere into a
+          # surprise rolling restart — including for StatefulSets where a restart means a
+          # leader election, not a no-op. Explicit beats convenient here.
+          watchGlobally: true
+          reloadOnCreate: false
+          reloadOnDelete: false
+
+          deployment:
+            # Tiny: it watches the API and patches an annotation. No data path.
+            resources:
+              requests:
+                cpu: 10m
+                memory: 32Mi
+              limits:
+                cpu: 100m
+                memory: 64Mi
+
+          # PodMonitor, not ServiceMonitor: the chart marks serviceMonitor deprecated, and it
+          # additionally requires `reloader.service` to be enabled or it finds no endpoints —
+          # it silently renders nothing otherwise. podMonitor scrapes the pod directly.
+          #
+          # Picked up automatically because the monitoring stack sets
+          # podMonitorSelectorNilUsesHelmValues: false.
+          serviceMonitor:
+            enabled: false
+          podMonitor:
+            enabled: true
+            namespace: reloader
+
+  project: default
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        maxDuration: 3m0s
+        factor: 2

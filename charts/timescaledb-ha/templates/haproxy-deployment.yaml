@@ -4,6 +4,10 @@ kind: Deployment
 metadata:
   name: {{ include "tsha.haproxy.fullname" . }}
   namespace: {{ .Release.Namespace }}
+  annotations:
+    # haproxy.cfg is a mounted ConfigMap and HAProxy only reads it at startup — the resolvers
+    # fix needed a manual `rollout restart` to take effect. Stateless; safe to bounce.
+    reloader.stakater.com/auto: "true"
   labels:
     {{- include "tsha.haproxy.labels" . | nindent 4 }}
 spec:
