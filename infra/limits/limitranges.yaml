@@ -1,0 +1,148 @@
+# Default resource limits per namespace.
+#
+# 21 containers in this cluster run with NO memory limit at all — argocd, keycloak, kafka, the
+# nginx controller, the Prometheus config-reloaders. They do not appear in the node's limit
+# budget, so `Allocated resources` understates real exposure: any one of them can grow until the
+# kernel OOM-kills something, and the victim is not necessarily the container that grew.
+#
+# A LimitRange makes a limit the default rather than something each chart must remember. The
+# Grafana k8s-sidecars ran unbounded until it was noticed by hand; this makes that structurally
+# impossible for anything created from here on.
+#
+# ── Three deliberate design choices ─────────────────────────────────────────────────
+#
+# 1. NO default CPU limit — only a CPU *request*. A CPU limit causes CFS throttling, which
+#    shows up as latency long before it shows up as a metric anyone looks at. Requests are
+#    what the scheduler needs; limits on CPU mostly cause harm. Memory is the opposite: it is
+#    incompressible, so a limit is the only thing standing between one leak and a node-wide
+#    OOM.
+#
+# 2. Defaults are sized ABOVE each namespace's measured 24h peak, per namespace rather than
+#    globally. Keycloak peaks at 861Mi and sealed-secrets at 10Mi — one number for both would
+#    be either useless or lethal.
+#
+# 3. kube-system is deliberately EXCLUDED. calico, coredns and metrics-server are the cluster
+#    itself; a default that is too low there does not degrade a workload, it breaks networking
+#    and DNS, and you lose the means to fix it. calico-node alone is the busiest thing on the
+#    node.
+#
+# ⚠️ A LimitRange applies at ADMISSION, to newly created pods only. Nothing changes until a
+# pod is recreated, so this takes effect gradually as things restart — it is not a live change
+# and cannot itself cause an outage on apply.
+---
+# Peak 680Mi (kafka). Kafka runs -Xmx1g, so the JVM alone can reach ~1Gi plus off-heap.
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: default-limits
+  namespace: database
+spec:
+  limits:
+    - type: Container
+      default:
+        memory: 1536Mi
+      defaultRequest:
+        cpu: 50m
+        memory: 128Mi
+---
+# Peak 861Mi (keycloak, JVM). The most headroom of any namespace here for that reason.
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: default-limits
+  namespace: infrastructure
+spec:
+  limits:
+    - type: Container
+      default:
+        memory: 1536Mi
+      defaultRequest:
+        cpu: 50m
+        memory: 128Mi
+---
+# Peak 445Mi (argocd-application-controller).
+#
+# ⚠️ Argo CD lives here and manages this very manifest. Set the default too low and a
+# recreated Argo pod OOMKills, taking with it the mechanism you would use to fix it. 768Mi is
+# ~1.7x the observed peak. Recovery if it ever bites:
+#   kubectl delete limitrange default-limits -n devops
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: default-limits
+  namespace: devops
+spec:
+  limits:
+    - type: Container
+      default:
+        memory: 768Mi
+      defaultRequest:
+        cpu: 50m
+        memory: 128Mi
+---
+# Peak 548Mi (prometheus) — but the unbounded containers here are only the config-reloaders
+# (~1Mi each), since Prometheus and Grafana both set their own limits.
+#
+# 1Gi rather than 512Mi anyway: a default BELOW the namespace's realistic peak is a trap for
+# whatever gets added next, and it costs nothing to be generous — a default only materialises
+# on containers that declare no limit of their own.
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: default-limits
+  namespace: monitoring
+spec:
+  limits:
+    - type: Container
+      default:
+        memory: 1Gi
+      defaultRequest:
+        cpu: 25m
+        memory: 64Mi
+---
+# Peak 304Mi (nginx controller). It is hostNetwork and on the path for every HTTP request in
+# the cluster — generous rather than tight.
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: default-limits
+  namespace: ingress
+spec:
+  limits:
+    - type: Container
+      default:
+        memory: 512Mi
+      defaultRequest:
+        cpu: 50m
+        memory: 128Mi
+---
+# Peak 289Mi (cv-hub).
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: default-limits
+  namespace: demo
+spec:
+  limits:
+    - type: Container
+      default:
+        memory: 512Mi
+      defaultRequest:
+        cpu: 25m
+        memory: 64Mi
+---
+# Peak 10Mi. Small, but it holds the master key that decrypts every SealedSecret in Git —
+# worth bounding so nothing else in the namespace can starve it.
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: default-limits
+  namespace: sealed-secrets
+spec:
+  limits:
+    - type: Container
+      default:
+        memory: 128Mi
+      defaultRequest:
+        cpu: 10m
+        memory: 32Mi

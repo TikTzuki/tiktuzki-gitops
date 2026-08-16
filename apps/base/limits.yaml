@@ -1,0 +1,30 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: limits
+  namespace: devops
+spec:
+  destination:
+    # LimitRanges are namespaced and each carries its own namespace, so this is only where the
+    # Application object accounts them. It spans database/infrastructure/devops/monitoring/
+    # ingress/demo/sealed-secrets.
+    namespace: devops
+    server: https://kubernetes.default.svc
+  source:
+    repoURL: git@github.com:TikTzuki/tiktuzki-gitops.git
+    targetRevision: main
+    # Directory-type app (no Helm), same pattern as ingress-tcp.
+    path: infra/limits
+  project: default
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        maxDuration: 3m0s
+        factor: 2
