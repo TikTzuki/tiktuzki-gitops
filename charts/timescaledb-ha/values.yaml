@@ -235,6 +235,8 @@ pgdog:
   service:
     type: ClusterIP
 
+  extraDatabases: []
+
   poolerMode: transaction
   defaultPoolSize: 25
   minPoolSize: 2

@@ -85,6 +85,9 @@ pgdog:
   enabled: true
   # include_primary maximises throughput but allows stale reads across transactions. Switch to
   # prefer_primary before pointing anything transactional at this.
+  extraDatabases:
+    - fnb
+    - ewallet
   readWriteSplit: include_primary
   defaultPoolSize: 25
 

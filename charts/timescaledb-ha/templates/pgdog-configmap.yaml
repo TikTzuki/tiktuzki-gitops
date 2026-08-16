@@ -68,16 +68,24 @@ data:
     openmetrics_port = {{ .Values.pgdog.metricsPort }}
 
     # ─── Cluster members ─────────────────────────────────────────────────────────────
-    # Same `name` on every entry = one logical cluster that clients connect to as database
-    # "{{ .Values.bootstrap.database }}". Addresses are the StatefulSet's stable pod DNS names,
-    # NOT a Service — pgdog has to reach each node individually to poll its role.
-    {{- range $i := until (int .Values.replicaCount) }}
+    # Same `name` on every entry for a given database = one logical cluster clients connect to
+    # under that name. Addresses are the StatefulSet's stable pod DNS names, NOT a Service —
+    # pgdog has to reach each node individually to poll its role.
+    #
+    # ⚠️ pgdog routes ONLY to databases listed here. Creating a database in Postgres does not
+    # make it reachable on :6432 — the connection is refused with "no user or database in
+    # config", which looks like an authentication failure rather than a missing route.
+    # One block per (database x node): {{ len (concat (list .Values.bootstrap.database) (.Values.pgdog.extraDatabases | default list)) }} databases x {{ .Values.replicaCount }} nodes.
+    {{- $dbs := concat (list .Values.bootstrap.database) (.Values.pgdog.extraDatabases | default list) | uniq }}
+    {{- range $db := $dbs }}
+    {{- range $i := until (int $.Values.replicaCount) }}
 
     [[databases]]
-    name = "{{ $.Values.bootstrap.database }}"
+    name = "{{ $db }}"
     host = "{{ include "tsha.fullname" $ }}-{{ $i }}.{{ include "tsha.headlessServiceName" $ }}.{{ $.Release.Namespace }}.svc.cluster.local"
     port = 5432
     role = "auto"
-    database_name = "{{ $.Values.bootstrap.database }}"
+    database_name = "{{ $db }}"
+    {{- end }}
     {{- end }}
 {{- end }}
