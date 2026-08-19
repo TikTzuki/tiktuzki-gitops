@@ -9,12 +9,25 @@ service:
   type: ClusterIP
   port: 3000
   nodePort: 32002
+
+# All configuration is secret (connection string, session signing key, admin
+# credentials), so it arrives as one sealed Secret rather than a mix of plain
+# values and secretKeyRefs. See README.md for the kubeseal command that builds it.
+#
+# Keys consumed by the app:
+#   DATABASE_URL   — Postgres connection string (see README: use the primary, not pgdog)
+#   AUTH_SECRET    — signs the admin session cookie; min 32 chars, app refuses to start without it
+#   ADMIN_EMAIL    — seeded admin login
+#   ADMIN_PASSWORD — only applied when the account is first created; rotating it here
+#                    does NOT change an existing admin's password
+#   ADMIN_NAME     — display name (optional, defaults to "Quản trị viên")
+envFrom:
+  - secretRef:
+      name: checkin-env
+
 extraEnvVars:
-  - name: DATABASE_URL
-    valueFrom:
-      secretKeyRef:
-        name: checkin-secret
-        key: database-url
+  - name: TZ
+    value: Asia/Ho_Chi_Minh
 
 imagePullSecrets: [ ]
 nameOverride: ""
@@ -32,7 +45,6 @@ podLabels: { }
 podSecurityContext: { }
 
 securityContext: { }
-
 
 ingress:
   enabled: true
@@ -59,10 +71,19 @@ httpRoute:
             type: PathPrefix
             value: /headers
 
+# The demo namespace LimitRange defaults to 512Mi/25m, which is tight for the boot
+# sequence: entrypoint.sh runs `prisma migrate deploy` and then tsx for the admin
+# seed before next-server starts, and those transiently need more than the steady state.
+resources:
+  requests:
+    cpu: 50m
+    memory: 192Mi
+  limits:
+    memory: 768Mi
 
-resources: { }
-
-
+# `/` is a static client page, so it answers even if Postgres is unreachable. That is
+# acceptable here only because entrypoint.sh already fails the container on a bad
+# database — the pod never reaches Ready with a broken DATABASE_URL.
 livenessProbe:
   httpGet:
     path: /
@@ -72,23 +93,21 @@ readinessProbe:
     path: /
     port: http
 
+# Migrations run on every pod start. Keep this at 1: two pods booting together would
+# race on `prisma migrate deploy`. Prisma takes an advisory lock so it is safe rather
+# than corrupting, but the loser waits and can trip its startup probe.
 autoscaling:
   enabled: false
   minReplicas: 1
   maxReplicas: 100
   targetCPUUtilizationPercentage: 80
 
+# Disabled: the old hackathon build kept a JSON file database at /app/data. All state
+# now lives in Postgres, and the volume was a node1-pinned local PV that constrained
+# scheduling for nothing. The PV is reclaimPolicy: Retain, so the host directory
+# survives this being turned off.
 persistence:
-  enabled: true
-  storageClass: ""
-  accessMode: ReadWriteOnce
-  size: 1Gi
-  # Local PV configuration
-  local:
-    enabled: true
-    node: node1
-    path: /home/tik/data/checkin-data/
-    reclaimPolicy: Retain
+  enabled: false
 
 volumes: [ ]
 

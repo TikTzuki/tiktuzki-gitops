@@ -52,6 +52,10 @@ securityContext: { }
 # This is for setting up a service more information can be found here: https://kubernetes.io/docs/concepts/services-networking/service/
 extraEnvVars: [ ]
 
+# Pull whole Secrets/ConfigMaps in as env vars. The app's secrets (DATABASE_URL,
+# AUTH_SECRET, ADMIN_*) ride in here so adding a key later needs no chart change.
+envFrom: [ ]
+
 service:
   # This sets the service type more information can be found here: https://kubernetes.io/docs/concepts/services-networking/service/#publishing-services-service-types
   type: NodePort
