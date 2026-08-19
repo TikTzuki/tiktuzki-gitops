@@ -110,6 +110,7 @@ pgdog:
   extraDatabases:
     - fnb
     - ewallet
+    - checkin
   readWriteSplit: include_primary
   defaultPoolSize: 25
 
