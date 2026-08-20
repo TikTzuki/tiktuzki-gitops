@@ -3,7 +3,7 @@ replicaCount: 1
 image:
   repository: tiktuzki/checkin
   pullPolicy: Always
-  tag: "0ad09a32"
+  tag: "6a944725"
 
 service:
   type: ClusterIP
