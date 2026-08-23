@@ -16,7 +16,7 @@ authenticates by default fails closed on a cluster with no identity provider.
 What dev expects to exist in Keycloak realm `homelab`:
 
 - Client `neo-flagd`, confidential, redirect URI
-  `https://neo-flagd.tiktuzki.com/login/oauth2/code/keycloak` — the path ends in
+  `https://flagd.tiktuzki.com/login/oauth2/code/keycloak` — the path ends in
   `auth.registrationId`, not the client id.
 - Groups `flag-admins`, `flag-operators`, `flag-viewers`.
 - A Group Membership mapper putting `groups` in the **access** token. Id-token-only leaves

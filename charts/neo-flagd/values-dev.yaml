@@ -55,8 +55,8 @@ flagserver:
 #
 # Keycloak client `neo-flagd` in realm `homelab`, registered with:
 #   Client authentication  On (confidential)
-#   Valid redirect URIs    https://neo-flagd.tiktuzki.com/login/oauth2/code/keycloak
-#   Web origins            https://neo-flagd.tiktuzki.com
+#   Valid redirect URIs    https://flagd.tiktuzki.com/login/oauth2/code/keycloak
+#   Web origins            https://flagd.tiktuzki.com
 #
 # The callback path ends in `registrationId`, not the client id — rename one and Keycloak has
 # to be updated with it.
@@ -123,12 +123,7 @@ rbac:
 extraConfig:
   logging:
     level:
-      # The upstream application.yml sets logging.level.io.summer.flagserver, which matches no
-      # logger — the code lives in io.summer.flagd. This is the working spelling.
       io.summer.flagd: INFO
-      # Temporary, until the claim shape is confirmed in the cluster: logs the roles extracted
-      # from each token and the access decisions made. Without it, "claim absent" and
-      # "correctly denied" look identical from outside. Remove once verified.
       io.summer.flagd.rbac: DEBUG
 
 service:
@@ -145,7 +140,7 @@ ingress:
   className: public
   annotations: {}
   hosts:
-    - host: neo-flagd.tiktuzki.com
+    - host: flagd.tiktuzki.com
       paths:
         - path: /
           pathType: Prefix
