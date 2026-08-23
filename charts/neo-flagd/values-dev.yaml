@@ -36,11 +36,11 @@ database:
   # Flyway creates this schema if it is missing; `app` owns database `app`, so it may.
   schema: flagd
   username: app
-  # Secrets are namespace-scoped, so this is a copy of the HA cluster's app-password living
+  # Secrets are namespace-scoped, so this is a copy of the HA cluster's pg-password living
   # in `demo`. It is NOT database/timescaledb-ha-secret, which this pod cannot read.
   # See README.md for the kubeseal command.
   existingSecret: neo-flagd-secret
-  passwordKey: app-password
+  passwordKey: pg-password
   # Only the revision poll and admin writes cross this pool; reads never do.
   poolSize: 10
 
