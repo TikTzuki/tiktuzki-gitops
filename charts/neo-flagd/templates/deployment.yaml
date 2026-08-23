@@ -1,0 +1,134 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "neo-flagd.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    # Restart when a referenced ConfigMap or Secret changes.
+    #
+    # Not cosmetic here for two reasons: the DB and OAuth passwords arrive as env vars, which
+    # are captured at container start and never refresh (re-sealing a Secret otherwise leaves
+    # the pod presenting the old value until something else happens to restart it); and
+    # rbac.yaml is read once at startup, so an edited grant would sit inert in the ConfigMap
+    # while the running pod enforced the previous policy.
+    #
+    # Requires the opt-in Reloader deployed by apps/base/reloader.yaml.
+    reloader.stakater.com/auto: "true"
+  labels:
+    {{- include "neo-flagd.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "neo-flagd.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "neo-flagd.labels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "neo-flagd.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.serviceAccount.automount }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: neo-flagd
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            # ⚠️ FILE paths, comma-separated — each must NOT end in "/". Given a directory,
+            # Spring Boot loads only files named application.{yaml,yml,properties} from it and
+            # silently ignores anything else, so a mounted rbac.yaml would never be read. With
+            # RBAC config missing there is no error: the server simply has no roles.
+            - name: SPRING_CONFIG_ADDITIONAL_LOCATION
+              value: "file:/etc/neo-flagd/application.yaml{{ if .Values.rbac.enabled }},file:/etc/neo-flagd-rbac/rbac.yaml{{ end }}"
+            - name: SPRING_R2DBC_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "database.existingSecret is required" .Values.database.existingSecret }}
+                  key: {{ .Values.database.passwordKey }}
+            # Flyway is a separate credential binding: it is JDBC-only and does not read
+            # spring.r2dbc.*.
+            - name: SPRING_FLYWAY_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.existingSecret }}
+                  key: {{ .Values.database.passwordKey }}
+            {{- if .Values.auth.enabled }}
+            {{- $reg := include "neo-flagd.oauthRegistrationId" . | upper | replace "-" "" }}
+            - name: SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_{{ $reg }}_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "auth.existingSecret is required when auth.enabled" .Values.auth.existingSecret }}
+                  key: {{ .Values.auth.clientSecretKey }}
+            {{- end }}
+            {{- with .Values.extraEnvVars }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          {{- with .Values.startupProbe }}
+          startupProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/neo-flagd
+              readOnly: true
+            {{- if .Values.rbac.enabled }}
+            - name: rbac-config
+              mountPath: /etc/neo-flagd-rbac
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "neo-flagd.fullname" . }}
+        {{- if .Values.rbac.enabled }}
+        - name: rbac-config
+          configMap:
+            name: {{ include "neo-flagd.fullname" . }}-rbac
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

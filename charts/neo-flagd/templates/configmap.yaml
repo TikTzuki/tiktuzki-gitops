@@ -1,0 +1,107 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "neo-flagd.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "neo-flagd.labels" . | nindent 4 }}
+data:
+  # Merged OVER the application.yml baked into the jar, via SPRING_CONFIG_ADDITIONAL_LOCATION
+  # (see deployment.yaml). Passwords are NOT here — they arrive as env vars from a Secret,
+  # because a ConfigMap is world-readable to anything with get on this namespace.
+  application.yaml: |
+    spring:
+      r2dbc:
+        url: r2dbc:postgresql://{{ include "neo-flagd.dbTarget" . }}
+        username: {{ .Values.database.username }}
+        pool:
+          enabled: true
+          max-size: {{ .Values.database.poolSize }}
+      # Flyway is JDBC-only and is the single blocking operation in this service. It runs
+      # once, before the server accepts traffic.
+      #
+      # ⚠️ Both URLs point at the same plain Postgres endpoint on purpose. Do NOT route
+      # either one through pgdog: Flyway takes a SESSION-level advisory lock to serialise
+      # concurrent migrators, and a transaction-mode pooler does not keep a session pinned
+      # across statements, so the lock silently fails to hold. The read/write split pgdog
+      # offers is worthless here anyway — this service answers reads from memory and only
+      # touches Postgres for the revision poll and admin writes.
+      flyway:
+        enabled: true
+        url: jdbc:postgresql://{{ include "neo-flagd.dbTarget" . }}
+        user: {{ .Values.database.username }}
+        {{- with .Values.database.schema }}
+        # Named explicitly as well as in the URL: this is what makes Flyway create the schema
+        # if it is missing and keep flyway_schema_history inside it, rather than dropping a
+        # history table into whatever search_path resolves to in a shared database.
+        schemas: [{{ . | quote }}]
+        {{- end }}
+    {{- if .Values.auth.enabled }}
+      security:
+        oauth2:
+          client:
+            registration:
+              {{ include "neo-flagd.oauthRegistrationId" . }}:
+                client-id: {{ required "auth.clientId is required when auth.enabled" .Values.auth.clientId | quote }}
+                client-name: {{ .Values.auth.clientName | quote }}
+                scope: [{{ .Values.auth.scope | splitList "," | join ", " }}]
+                authorization-grant-type: authorization_code
+                # {baseUrl} resolves from the X-Forwarded-* headers — see forward-headers-strategy below.
+                redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+            provider:
+              {{ include "neo-flagd.oauthRegistrationId" . }}:
+                issuer-uri: {{ required "auth.issuerUri is required when auth.enabled" .Values.auth.issuerUri | quote }}
+                user-name-attribute: {{ .Values.auth.userNameAttribute | quote }}
+          # Machine callers (CI, Terraform) present a Bearer JWT from the same issuer
+          # instead of going through the browser flow.
+          resourceserver:
+            jwt:
+              issuer-uri: {{ .Values.auth.issuerUri | quote }}
+
+    # ⚠️ Required, not optional. TLS terminates upstream at NPM and reaches the pod as plain
+    # HTTP, so without this Spring builds an http:// redirect_uri, Keycloak rejects it as
+    # unregistered, and the failure presents as a bad client registration rather than a proxy
+    # problem. `framework` installs ForwardedHeaderTransformer, which is what Spring
+    # Security's redirect-URI resolution actually consults on WebFlux.
+    server:
+      forward-headers-strategy: framework
+    {{- end }}
+
+    flagserver:
+      # Switches the server from "unauthenticated, trust the gateway's X-Actor header" to
+      # "authenticate in-process and take the actor from the verified token". The
+      # spring.security block above only supplies the credentials; this is what activates
+      # the secured filter chain.
+      auth:
+        enabled: {{ .Values.auth.enabled }}
+        {{- if .Values.auth.enabled }}
+        registration-id: {{ include "neo-flagd.oauthRegistrationId" . | quote }}
+        actor-claim: {{ .Values.auth.userNameAttribute | quote }}
+        {{- end }}
+      refresh-interval: {{ .Values.flagserver.refreshInterval }}
+      startup-timeout: {{ .Values.flagserver.startupTimeout }}
+      default-flag-set: {{ .Values.flagserver.defaultFlagSet }}
+
+    management:
+      endpoint:
+        health:
+          probes:
+            enabled: true
+          group:
+            # ⚠️ This line is load-bearing and is the reason this chart overrides health at all.
+            #
+            # `flagSnapshots` is registered as a plain @Component, so by default it lands only
+            # in the aggregate /actuator/health — NOT in the readiness group, which otherwise
+            # contains just readinessState. Verified against a running server: after the
+            # refresh loop died, /actuator/health returned DOWN while
+            # /actuator/health/readiness and /liveness both returned UP, so a replica serving
+            # permanently frozen flags stayed in the Service and was never restarted.
+            #
+            # Including it here makes the stall dequeue the pod, which is what the upstream
+            # README claims happens by default.
+            readiness:
+              include: readinessState,flagSnapshots
+    {{- with .Values.extraConfig }}
+
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
