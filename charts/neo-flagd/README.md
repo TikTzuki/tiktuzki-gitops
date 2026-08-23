@@ -44,7 +44,7 @@ cannot read `database/timescaledb-ha-secret`; copy the value across:
 ```sh
 PW=$(kubectl get secret timescaledb-ha-secret -n database -o jsonpath='{.data.app-password}' | base64 -d)
 
-kubectl create secret generic flagd-secret --namespace demo \
+kubectl create secret generic neo-flagd-secret --namespace demo \
   --from-literal=app-password="$PW" \
   --dry-run=client -o yaml \
 | kubeseal --controller-namespace sealed-secrets \
@@ -58,7 +58,7 @@ every namespace-local credential copy carries; re-seal when you rotate.
 **The OAuth client secret**, once the Keycloak client exists:
 
 ```sh
-kubectl create secret generic flagd-secret --namespace demo \
+kubectl create secret generic neo-flagd-secret --namespace demo \
   --from-literal=client-secret='<from Keycloak>' \
   --dry-run=client -o yaml \
 | kubeseal --controller-namespace sealed-secrets \

@@ -71,7 +71,7 @@ auth:
   scope: "openid,profile,email,groups"
   # Becomes the audit-trail actor and the name the console shows. Not `sub`, which is a UUID.
   userNameAttribute: preferred_username
-  existingSecret: flagd-secret
+  existingSecret: neo-flagd-secret
   clientSecretKey: client-secret
 
 # ─── Authorization ───────────────────────────────────────────────────────────────────────
