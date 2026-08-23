@@ -142,15 +142,33 @@ documents run ~209 bytes per flag. That is the real argument for splitting flag 
 ### RBAC shape
 
 Resources: `flagset`, `flag`, `audit`, `evaluate`, `appconfig`.
-Actions: `view`, `toggle`, `edit`, `create`, `delete`, `run`, `all`.
 
-`toggle` is separate from `edit` on purpose — it may change `defaultVariant` and nothing else,
-so an on-call engineer can kill a feature without being able to rewrite a targeting rule. The
-application must enforce that distinction server-side; the split is meaningless if the toggle
-endpoint accepts an arbitrary definition.
+| Resource | Actions |
+|---|---|
+| `flag` | `view`, `toggle`, `edit`, `delete`, `all` |
+| `flagset` | `view`, `create`, `edit`, `delete`, `all` |
+| `audit` | `view` |
+| `evaluate` | `run` |
+| `appconfig` | `view` |
 
-There is no wildcard across *resources*, only the `all` action within one, so widening a role
-stays a visible diff.
+There is no `create` on `flag`: the admin API creates a flag with the same PUT that replaces
+one, so `edit` covers create-or-replace. `create` applies to flag sets.
+
+`toggle` is separate from `edit` on purpose, and the server enforces the difference rather
+than trusting the caller: `POST /api/v1/admin/flag-sets/{set}/flags/{key}/toggle` takes only a
+variant name and rebuilds the definition from the stored one, so a caller holding `toggle` has
+nowhere to put a new targeting rule. An on-call engineer can kill a feature without being able
+to rewrite how it targets.
+
+There is no wildcard across *resources*, only the `all` action within one — so `flag: [all]`
+grants nothing on `audit`, and widening a role stays a visible diff.
+
+`GET /api/v1/me` reports the caller's roles and effective permissions so the console can grey
+out controls. It is an affordance only; every call is re-checked server-side.
+
+Deny-by-default: a caller matching no role can do nothing. Both switches must be on —
+`rbac.enabled` alone does nothing without `auth.enabled`, because there is no verified
+principal to attribute a decision to.
 
 ## Verifying a deploy
 
