@@ -64,6 +64,7 @@ auth:
   enabled: true
   registrationId: keycloak
   issuerUri: https://keycloak.tiktuzki.com/realms/homelab
+  redirectUri: https://flagd.tiktuzki.com/login/oauth2/code/keycloak
   clientId: neo-flagd
   clientName: Keycloak
   # `groups` is what carries authorization. Without the scope the claim is absent, every role

@@ -72,6 +72,9 @@ auth:
   #   https://<host>/login/oauth2/code/<registrationId>
   registrationId: keycloak
   issuerUri: ""
+  # Absolute callback URL. Leave empty to derive it from the request, which needs
+  # X-Forwarded-Proto to arrive intact; set it when a proxy in front rewrites that header.
+  redirectUri: ""
   clientId: neo-flagd
   clientName: Keycloak
   scope: "openid,profile,email,groups"

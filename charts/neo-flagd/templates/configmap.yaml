@@ -46,8 +46,15 @@ data:
                 client-name: {{ .Values.auth.clientName | quote }}
                 scope: [{{ .Values.auth.scope | splitList "," | join ", " }}]
                 authorization-grant-type: authorization_code
-                # {baseUrl} resolves from the X-Forwarded-* headers — see forward-headers-strategy below.
+              # {baseUrl} is built from the request AS THE POD SEES IT, so it is only https
+              # if X-Forwarded-Proto survives the whole proxy chain. Set auth.redirectUri to
+              # pin an absolute URL instead when it does not — see README, "redirect_uri comes
+              # out as http://".
+                {{- if .Values.auth.redirectUri }}
+                redirect-uri: {{ .Values.auth.redirectUri | quote }}
+                {{- else }}
                 redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+                {{- end }}
             provider:
               {{ include "neo-flagd.oauthRegistrationId" . }}:
                 issuer-uri: {{ required "auth.issuerUri is required when auth.enabled" .Values.auth.issuerUri | quote }}
