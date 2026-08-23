@@ -28,10 +28,15 @@ serviceAccount:
 #
 # The schema is created by Flyway at startup; the DATABASE itself is not. Create it once:
 #   kubectl exec -n database timescaledb-0 -- psql -U postgres -c 'create database flags'
+# Sharing a database instead? Set `database.schema` and Flyway creates the schema itself,
+# provided the user can CREATE in that database.
 database:
   host: timescaledb.database
   port: 5432
   name: flags
+  # Optional. Set it to share a database with other services instead of taking one of your
+  # own: it appends ?currentSchema= to both URLs and tells Flyway to own that schema.
+  schema: ""
   username: postgres
   # Secret holding the Postgres password. Consumed as an env var by BOTH spring.r2dbc and
   # spring.flyway — Flyway is JDBC-only and needs its own credential binding.

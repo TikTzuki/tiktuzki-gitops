@@ -7,40 +7,53 @@ point.
 
 Deployed to `demo` from `apps/dev/neo-flagd.yaml`.
 
-## What is not wired up yet
+## Chart defaults are off; dev is on
 
-`auth` and `rbac` in `values.yaml` are **rendered but inert**. The application does not read
-them until the OAuth2 work lands on the image being deployed. Until then:
+`values.yaml` ships with `auth`, `rbac` and `ingress` all disabled, because a chart that
+authenticates by default fails closed on a cluster with no identity provider.
+`values-dev.yaml` turns all three on.
 
-- The admin API is **unauthenticated in-process** — the upstream README says to terminate auth
-  at a gateway.
-- The audit trail's actor is whatever `X-Actor` header the caller sends, so it can be forged.
-- `ingress.enabled` is therefore **off** in `values-dev.yaml`. In-cluster SDK clients poll the
-  Service directly and do not need it; only the human console does, and the console does not
-  exist yet.
+What dev expects to exist in Keycloak realm `homelab`:
 
-Turn things on in this order, verifying each: image with OAuth2 support → Keycloak client →
-confirm the `groups` claim → `auth.enabled` → `rbac.enabled` → `ingress.enabled`.
+- Client `neo-flagd`, confidential, redirect URI
+  `https://neo-flagd.tiktuzki.com/login/oauth2/code/keycloak` — the path ends in
+  `auth.registrationId`, not the client id.
+- Groups `flag-admins`, `flag-operators`, `flag-viewers`.
+- A Group Membership mapper putting `groups` in the **access** token. Id-token-only leaves
+  bearer callers (CI) with no roles.
+
+Then `GET /api/v1/me` to confirm the claim actually arrived before trusting the policy.
 
 ## Prerequisites
 
-**The database.** Flyway creates the schema at startup; it does not create the database.
+**The database.** Nothing to create by hand in dev: `values-dev.yaml` puts neo-flagd in a
+`flagd` schema of the existing `app` database on the HA cluster, and Flyway creates that
+schema on first start because `app` owns the database. Verified against a stand-in with a
+pre-existing `public` table — the four tables and `flyway_schema_history` all land in `flagd`
+and nothing else is touched.
+
+Taking a whole database instead (`database.schema: ""`) means creating it first:
 
 ```sh
 kubectl exec -n database timescaledb-0 -- psql -U postgres -c 'create database flags'
 ```
 
-**The Postgres password**, in the `demo` namespace (Secrets are namespace-scoped, so the
-existing `database/timescaledb-secret` is not reachable from here):
+**The Postgres password**, in the `demo` namespace. Secrets are namespace-scoped, so the pod
+cannot read `database/timescaledb-ha-secret`; copy the value across:
 
 ```sh
+PW=$(kubectl get secret timescaledb-ha-secret -n database -o jsonpath='{.data.app-password}' | base64 -d)
+
 kubectl create secret generic neo-flagd-secret --namespace demo \
-  --from-literal=postgres-password='<the timescaledb postgres password>' \
+  --from-literal=app-password="$PW" \
   --dry-run=client -o yaml \
 | kubeseal --controller-namespace sealed-secrets \
            --controller-name sealed-secrets-controller \
            --format yaml > templates/db-sealedsecret.yaml
 ```
+
+⚠️ Rotating `app-password` on the cluster does not update this copy. It is the same trade-off
+every namespace-local credential copy carries; re-seal when you rotate.
 
 **The OAuth client secret**, once the Keycloak client exists:
 
@@ -88,12 +101,18 @@ which is what dequeues the pod. The upstream README claims this happens by defau
 
 ### Both database URLs bypass pgdog
 
-`spring.r2dbc.url` and `spring.flyway.url` both point at plain `timescaledb.database:5432`.
+`spring.r2dbc.url` and `spring.flyway.url` both point at HAProxy's primary port
+(`timescaledb-ha-haproxy.database:5000`), not pgdog `:6432`. This deviates from the house rule
+in `ACCESS.md` that applications go through pgdog, on purpose:
 
-Flyway takes a **session-level** advisory lock to serialise concurrent migrators, and a
-transaction-mode pooler does not pin a session across statements, so the lock silently fails to
-hold. And pgdog's read/write split buys nothing here: this service answers every read from
-memory and touches Postgres only for the revision poll and admin writes.
+- Flyway takes a **session-level** advisory lock to serialise concurrent migrators, and a
+  transaction-mode pooler does not pin a session across statements, so the lock silently
+  fails to hold. `ACCESS.md` already records the same constraint for Debezium.
+- pgdog's read/write split buys nothing here. This service answers every read from an
+  in-memory snapshot and touches Postgres only for the 5s revision poll and admin writes, all
+  of which must reach the primary anyway.
+
+`:5000` follows the leader, so this survives a Patroni failover.
 
 ## Do not lower `flagserver.refreshInterval`
 
@@ -131,13 +150,14 @@ documents run ~209 bytes per flag. That is the real argument for splitting flag 
 | Key | Default | Notes |
 |---|---|---|
 | `replicaCount` | `1` | Stateless; dev runs 2 |
-| `database.existingSecret` | `""` | **Required.** Key `postgres-password` |
+| `database.existingSecret` | `""` | **Required.** Key from `database.passwordKey` |
+| `database.schema` | `""` | Set to share a database: adds `?currentSchema=` and Flyway owns that schema |
 | `flagserver.refreshInterval` | `5s` | See the warning above |
-| `auth.enabled` | `false` | Not implemented in the app yet |
+| `auth.enabled` | `false` | On in dev. Needs the Keycloak client and a sealed secret |
 | `auth.registrationId` | `keycloak` | Sets the callback path Keycloak must whitelist |
-| `rbac.enabled` | `false` | Not implemented in the app yet; deny-by-default when on |
+| `rbac.enabled` | `false` | On in dev. Deny-by-default; needs `auth.enabled` too |
 | `rbac.rolesClaim` | `groups` | Dotted path, so `realm_access.roles` also works |
-| `ingress.enabled` | `false` | Leave off until `auth.enabled` is real |
+| `ingress.enabled` | `false` | On in dev, safe now that auth is enforced |
 
 ### RBAC shape
 

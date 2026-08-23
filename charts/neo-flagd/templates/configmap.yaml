@@ -30,6 +30,12 @@ data:
         enabled: true
         url: jdbc:postgresql://{{ include "neo-flagd.dbTarget" . }}
         user: {{ .Values.database.username }}
+        {{- with .Values.database.schema }}
+        # Named explicitly as well as in the URL: this is what makes Flyway create the schema
+        # if it is missing and keep flyway_schema_history inside it, rather than dropping a
+        # history table into whatever search_path resolves to in a shared database.
+        schemas: [{{ . | quote }}]
+        {{- end }}
     {{- if .Values.auth.enabled }}
       security:
         oauth2:

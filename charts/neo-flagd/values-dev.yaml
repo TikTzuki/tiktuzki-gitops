@@ -1,45 +1,47 @@
 # neo-flagd — dev cluster (node1), namespace `demo`.
 #
-# ─── STATE OF PLAY ───────────────────────────────────────────────────────────────────────
-# `auth` and `rbac` below are written out and reviewed, but BOTH ARE OFF, because the image
-# does not implement them yet. The server is unauthenticated in-process today. Consequently
-# the ingress is also off: the admin API shares a port with the console and the sync endpoint,
-# so publishing the host would publish flag writes.
-#
-# In-cluster SDK clients do not need the ingress — they poll the Service directly, which is
-# the actual production path. So this deploys usefully as-is.
-#
-# To go live with SSO, in order:
-#   1. Ship an image with spring-boot-starter-oauth2-client wired up (see the console build plan).
-#   2. Register the client in Keycloak realm `homelab`:
-#        Client ID              neo-flagd
-#        Client authentication  On (confidential)
-#        Valid redirect URIs    https://neo-flagd.tiktuzki.com/login/oauth2/code/keycloak
-#        Web origins            https://neo-flagd.tiktuzki.com
-#      The callback path ends in the REGISTRATION ID (auth.registrationId), not the client id.
-#   3. Add a Group Membership mapper and confirm the `groups` claim actually appears in the
-#      token — an absent claim and a correctly-denied user are indistinguishable from outside.
-#   4. Seal the client secret (see README.md), set auth.enabled: true, sync, verify login.
-#   5. Only then rbac.enabled: true, and re-verify with a non-admin account.
-#   6. Last, ingress.enabled: true.
+# SSO and RBAC are ON. A caller matching no role can do nothing, so if everyone is locked out
+# the `groups` claim is the first thing to check, not the role names — see "If it locks you
+# out" at the bottom.
 
 replicaCount: 2
 
 image:
   repository: tiktuzki/neo-flagd
   pullPolicy: Always
-  # TODO: pin to a build sha once the image is published, like charts/checkin does.
+  # TODO: pin to a build sha once the image is published, like charts/checkin does. `latest`
+  # makes a rollback impossible to describe, and with two replicas a partial rollout can run
+  # two different builds against one database.
   tag: "latest"
 
+# ─── Database ────────────────────────────────────────────────────────────────────────────
+#
+# The HA cluster, in a `flagd` schema of the shared `app` database, as user `app`.
+#
+# ⚠️ HAProxy's primary port, NOT pgdog. This deviates from the house rule in ACCESS.md that
+# applications go through pgdog :6432, and it is deliberate on both counts:
+#
+#   * Flyway takes a SESSION-level advisory lock to serialise concurrent migrators, and a
+#     transaction-mode pooler does not pin a session across statements, so the lock silently
+#     fails to hold. ACCESS.md already records the same constraint for Debezium.
+#   * pgdog's read/write split buys nothing here. This service answers every read from an
+#     in-memory snapshot and touches Postgres only for the 5s revision poll and admin writes,
+#     all of which must reach the primary anyway.
+#
+# :5000 follows the leader on failover, so this survives a Patroni switchover.
 database:
-  host: timescaledb.database
-  port: 5432
-  name: flags
-  username: postgres
-  # Namespace-scoped: this must live in `demo`, not in `database` alongside the server's own
-  # secret. See README.md for the kubeseal command.
+  host: timescaledb-ha-haproxy.database
+  port: 5000
+  name: app
+  # Flyway creates this schema if it is missing; `app` owns database `app`, so it may.
+  schema: flagd
+  username: app
+  # Secrets are namespace-scoped, so this is a copy of the HA cluster's app-password living
+  # in `demo`. It is NOT database/timescaledb-ha-secret, which this pod cannot read.
+  # See README.md for the kubeseal command.
   existingSecret: neo-flagd-secret
-  passwordKey: postgres-password
+  passwordKey: app-password
+  # Only the revision poll and admin writes cross this pool; reads never do.
   poolSize: 10
 
 flagserver:
@@ -49,28 +51,42 @@ flagserver:
   startupTimeout: 60s
   defaultFlagSet: default
 
+# ─── Authentication ──────────────────────────────────────────────────────────────────────
+#
+# Keycloak client `neo-flagd` in realm `homelab`, registered with:
+#   Client authentication  On (confidential)
+#   Valid redirect URIs    https://neo-flagd.tiktuzki.com/login/oauth2/code/keycloak
+#   Web origins            https://neo-flagd.tiktuzki.com
+#
+# The callback path ends in `registrationId`, not the client id — rename one and Keycloak has
+# to be updated with it.
 auth:
-  enabled: false
+  enabled: true
   registrationId: keycloak
   issuerUri: https://keycloak.tiktuzki.com/realms/homelab
   clientId: neo-flagd
   clientName: Keycloak
-  # `groups` carries authorization. Without the scope the claim is absent and every role
-  # below matches nothing.
+  # `groups` is what carries authorization. Without the scope the claim is absent, every role
+  # below matches nothing, and RBAC denies everyone.
   scope: "openid,profile,email,groups"
+  # Becomes the audit-trail actor and the name the console shows. Not `sub`, which is a UUID.
   userNameAttribute: preferred_username
   existingSecret: neo-flagd-oauth
   clientSecretKey: client-secret
 
+# ─── Authorization ───────────────────────────────────────────────────────────────────────
+#
+# Requires a Group Membership mapper on the client emitting `groups` into the ACCESS token —
+# id-token-only would leave bearer callers (CI) with no roles at all.
+#
+# Keycloak emits full paths (`/flag-admins`) unless "Full group path" is off on the mapper, so
+# every value below is a regex tolerating both forms. Tighten once you have confirmed the
+# shape with: GET /api/v1/me
 rbac:
-  enabled: false
+  enabled: true
   rolesClaim: groups
-  # Group names must match the claim EXACTLY. Keycloak's Group Membership mapper emits the
-  # full path (`/flag-admins`) unless "Full group path" is turned OFF, so each value is a
-  # regex tolerating both forms — the same trick charts/kafka uses. Tighten once the claim
-  # shape is confirmed.
   roles:
-    # Full control.
+    # Everything, everywhere.
     - name: flag-admins
       flagSets: ["*"]
       subjects:
@@ -82,8 +98,9 @@ rbac:
         - { resource: evaluate,               actions: [run] }
         - { resource: appconfig,              actions: [view] }
 
-    # Kill switches only. `toggle` may change defaultVariant and nothing else, so an on-call
-    # engineer can turn a feature off without being able to rewrite a targeting rule.
+    # Kill switches only. `toggle` may change defaultVariant and nothing else — the server
+    # rebuilds the definition from the stored one — so on-call can turn a feature off at 3am
+    # without holding the rights to rewrite how it targets.
     - name: flag-operators
       flagSets: ["*"]
       subjects:
@@ -93,7 +110,7 @@ rbac:
         - { resource: audit,             actions: [view] }
         - { resource: evaluate,          actions: [run] }
 
-    # Read-only. `evaluate` is deliberately NOT granted: the try-it box reveals how targeting
+    # Read-only. `evaluate` is deliberately withheld: the try-it box reveals how targeting
     # behaves for an arbitrary context, which is more than "view" implies.
     - name: flag-viewers
       flagSets: ["*"]
@@ -106,17 +123,25 @@ rbac:
 extraConfig:
   logging:
     level:
-      # The upstream application.yml sets logging.level.io.summer.flagserver, which matches
-      # nothing — the code lives in io.summer.flagd. This is the working spelling.
+      # The upstream application.yml sets logging.level.io.summer.flagserver, which matches no
+      # logger — the code lives in io.summer.flagd. This is the working spelling.
       io.summer.flagd: INFO
+      # Temporary, until the claim shape is confirmed in the cluster: logs the roles extracted
+      # from each token and the access decisions made. Without it, "claim absent" and
+      # "correctly denied" look identical from outside. Remove once verified.
+      io.summer.flagd.rbac: DEBUG
 
 service:
   type: ClusterIP
   port: 8080
 
-# Turn on only after step 6 above.
+# Safe to publish now that auth is on: the console and the admin API both require a session,
+# while the sync document, OFREP and the probes stay open because every SDK client and the
+# kubelet need them. TLS terminates at NPM, which is why `tls` is empty and why the chart
+# sets server.forward-headers-strategy — without it Spring builds an http:// redirect_uri and
+# Keycloak rejects it as unregistered.
 ingress:
-  enabled: false
+  enabled: true
   className: public
   annotations: {}
   hosts:
@@ -139,3 +164,16 @@ serviceAccount:
   automount: true
   annotations: {}
   name: ""
+
+# ─── If it locks you out ─────────────────────────────────────────────────────────────────
+#
+# Deny-by-default means a typo in a group name locks out everyone, including you, and it looks
+# exactly like a working deny. In order:
+#
+#   1. GET /api/v1/me — it reports the roles the server actually matched. Empty means the
+#      claim did not arrive or did not match, not that your permissions are wrong.
+#   2. Check the pod logs for "Roles for … from claim 'groups'" (the DEBUG line above).
+#   3. Break glass: set `rbac.enabled: false` and sync. Every authenticated user becomes a
+#      full admin, which is bad but recoverable. `auth.enabled: false` is the bigger hammer
+#      and also reopens the admin API to anyone who can reach the host — turn the ingress off
+#      at the same time if you use it.

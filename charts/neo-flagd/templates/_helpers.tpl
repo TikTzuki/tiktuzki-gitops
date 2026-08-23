@@ -49,11 +49,17 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 
 {{/*
 Base JDBC/R2DBC connection target, without the scheme.
-Both drivers point at the SAME database; see the comment in configmap.yaml for why neither
-of them goes through pgdog.
+
+Both drivers point at the SAME endpoint; see the comment in configmap.yaml for why neither
+of them goes through pgdog. `database.schema` appends ?currentSchema=, which is how this
+service shares a database with others instead of taking one of its own.
 */}}
 {{- define "neo-flagd.dbTarget" -}}
-{{- printf "%s:%v/%s" .Values.database.host .Values.database.port .Values.database.name -}}
+{{- $target := printf "%s:%v/%s" .Values.database.host .Values.database.port .Values.database.name -}}
+{{- if .Values.database.schema -}}
+{{- $target = printf "%s?currentSchema=%s" $target .Values.database.schema -}}
+{{- end -}}
+{{- $target -}}
 {{- end }}
 
 {{/*
