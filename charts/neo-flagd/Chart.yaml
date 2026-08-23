@@ -1,0 +1,16 @@
+apiVersion: v2
+name: neo-flagd
+description: Self-hosted feature flag server — flagd-core evaluation on PostgreSQL, with the admin console
+
+# A stateless Spring Boot (WebFlux + R2DBC) Deployment. Flag state lives in Postgres; every
+# replica keeps an in-memory snapshot per flag set and re-reads revisions on a timer, so
+# Postgres is the only coordination point — no broker, no leader election. Replicas are
+# therefore free to scale, and a write through any one of them propagates to the rest within
+# flagserver.refreshInterval.
+type: application
+
+# Bump on every chart change.
+version: 0.1.0
+
+# Application version shipped (matches image.tag).
+appVersion: "0.0.1-SNAPSHOT"

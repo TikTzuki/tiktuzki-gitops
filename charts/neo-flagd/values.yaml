@@ -1,0 +1,169 @@
+# Default values for neo-flagd.
+#
+# Defaults are the SAFE ones, not the useful ones: no ingress, no auth, no RBAC. The server
+# is unauthenticated in-process by design (its README says to terminate auth at a gateway),
+# so a default that exposed the admin API on a public host would hand flag control to anyone
+# who can resolve the name. Turn things on deliberately in values-<env>.yaml.
+
+replicaCount: 1
+
+image:
+  repository: tiktuzki/neo-flagd
+  # Pin a real tag. `latest` makes a rollback impossible to describe and makes two replicas
+  # able to run different code after a partial rollout.
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: false
+  automount: true
+  annotations: {}
+  name: ""
+
+# ─── Database ────────────────────────────────────────────────────────────────────────────
+#
+# The schema is created by Flyway at startup; the DATABASE itself is not. Create it once:
+#   kubectl exec -n database timescaledb-0 -- psql -U postgres -c 'create database flags'
+database:
+  host: timescaledb.database
+  port: 5432
+  name: flags
+  username: postgres
+  # Secret holding the Postgres password. Consumed as an env var by BOTH spring.r2dbc and
+  # spring.flyway — Flyway is JDBC-only and needs its own credential binding.
+  existingSecret: ""
+  passwordKey: postgres-password
+  # R2DBC connection pool. The request path never queries Postgres (reads are served from the
+  # in-memory snapshot), so this only carries the revision poll and admin writes. 10 is ample.
+  poolSize: 10
+
+# ─── Flag server tuning ──────────────────────────────────────────────────────────────────
+flagserver:
+  # How often a replica re-reads flag-set revisions. This is the propagation-delay ceiling
+  # after a write.
+  #
+  # ⚠️ Do NOT lower this without reading charts/neo-flagd/README.md. It is not a free knob:
+  # startup warm-up is given exactly 6 × this value before the process gives up and EXITS,
+  # and a refresh that outlasts one interval kills the refresh loop for the life of the pod.
+  # 5s is the tested default.
+  refreshInterval: 5s
+  defaultFlagSet: default
+
+# ─── Authentication (Keycloak / any OIDC) ────────────────────────────────────────────────
+#
+# ⚠️ NOT YET IMPLEMENTED IN THE APPLICATION. The chart renders the config; the server does
+# not read it until the OAuth2 work lands on the image you are deploying. Leaving this false
+# is currently the only honest setting — see README.md, "What is not wired up yet".
+auth:
+  enabled: false
+  # Spring registration id. Determines the callback path Keycloak must whitelist:
+  #   https://<host>/login/oauth2/code/<registrationId>
+  registrationId: keycloak
+  issuerUri: ""
+  clientId: neo-flagd
+  clientName: Keycloak
+  scope: "openid,profile,email,groups"
+  # preferred_username rather than email: it is what lands in the audit trail as the actor,
+  # and it survives a user changing their address.
+  userNameAttribute: preferred_username
+  existingSecret: ""
+  clientSecretKey: client-secret
+
+# ─── Authorization ───────────────────────────────────────────────────────────────────────
+#
+# ⚠️ NOT YET IMPLEMENTED IN THE APPLICATION — same caveat as `auth` above.
+#
+# Rendered into rbac.yaml and mounted as additional Spring config, bound under
+# `flagserver.rbac`. Deny-by-default once enabled: a user matching no role sees nothing.
+#
+# Each role: name, flagSets[], subjects[{type,value,regex}], permissions[{resource,value,actions}].
+# Resources: flagset, flag, audit, evaluate, appconfig.
+# Actions:   view, toggle, edit, create, delete, run, all.
+#            `all` covers every action on that resource. There is deliberately no wildcard
+#            across RESOURCES — widening a role stays a visible diff.
+rbac:
+  enabled: false
+  # Token claim carrying the caller's roles. A dotted path is supported, so all three
+  # Keycloak conventions work:
+  #   groups                            (Group Membership mapper)
+  #   realm_access.roles                (realm roles)
+  #   resource_access.neo-flagd.roles   (client roles)
+  rolesClaim: groups
+  roles: []
+
+# Merged into application.yaml last, so it can override anything above. Use for one-off
+# Spring settings that do not deserve a first-class value.
+extraConfig: {}
+
+# Additional environment variables, verbatim.
+extraEnvVars: []
+
+service:
+  type: ClusterIP
+  port: 8080
+
+# ⚠️ Off by default on purpose. The admin API and the console share this port with the
+# unauthenticated sync/OFREP endpoints, so exposing the host exposes flag WRITES too until
+# `auth.enabled` is real. In-cluster SDK clients reach the Service directly and need no
+# ingress at all.
+ingress:
+  enabled: false
+  className: public
+  annotations: {}
+  hosts:
+    - host: chart-example.local
+      paths:
+        - path: /
+          pathType: Prefix
+  # TLS terminates upstream at NPM in this cluster, so this stays empty.
+  tls: []
+
+# Measured, not guessed: 91,100 flags across 6 flag sets occupied 106 MB of live heap.
+# The Dockerfile runs with -XX:MaxRAMPercentage=75, so a 768Mi limit yields a ~576Mi heap —
+# roughly 5× headroom over a large real corpus.
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: "1"
+    memory: 768Mi
+
+# Probes. See README.md for why readiness must include the flagSnapshots indicator —
+# without it a replica whose refresh loop has died stays in the Service serving stale flags.
+startupProbe:
+  httpGet:
+    path: /actuator/health/liveness
+    port: http
+  periodSeconds: 5
+  failureThreshold: 30
+livenessProbe:
+  httpGet:
+    path: /actuator/health/liveness
+    port: http
+  periodSeconds: 15
+  timeoutSeconds: 5
+  failureThreshold: 5
+readinessProbe:
+  httpGet:
+    path: /actuator/health/readiness
+    port: http
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+# The app sets server.shutdown=graceful; give in-flight polls time to drain.
+terminationGracePeriodSeconds: 40
+
+podAnnotations: {}
+podLabels: {}
+podSecurityContext: {}
+securityContext: {}
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

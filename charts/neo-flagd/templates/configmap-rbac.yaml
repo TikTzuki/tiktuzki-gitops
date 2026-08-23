@@ -1,0 +1,57 @@
+{{- if .Values.rbac.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "neo-flagd.fullname" . }}-rbac
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "neo-flagd.labels" . | nindent 4 }}
+data:
+  # Kept in its OWN ConfigMap rather than folded into application.yaml so that changing who
+  # may do what is a small, reviewable diff instead of a churn of the whole server config.
+  # Both files are listed in SPRING_CONFIG_ADDITIONAL_LOCATION.
+  #
+  # ⚠️ Deny-by-default. Once `roles` is non-empty, a caller matching NO role can do nothing —
+  # that is the point, but it means a typo in a group name locks out everyone including you.
+  # Confirm the claim shape before relying on it: log the extracted roles at DEBUG for one
+  # deploy (see values-dev.yaml) rather than guessing, because "claim absent" and "correctly
+  # denied" look identical from outside.
+  rbac.yaml: |
+    flagserver:
+      rbac:
+        enabled: true
+        # Dotted path into the token. `groups` is flat; `realm_access.roles` and
+        # `resource_access.<client>.roles` are nested — all three must resolve through
+        # this one setting.
+        roles-claim: {{ .Values.rbac.rolesClaim | quote }}
+        roles:
+          {{- range .Values.rbac.roles }}
+          - name: {{ .name | quote }}
+            # Flag sets this role applies to. "*" means every set. Unlike kafka-ui's
+            # `clusters`, this IS matched as a pattern, because flag sets are created at
+            # runtime through the admin API and the chart cannot enumerate them.
+            flag-sets:
+              {{- range (default (list "*") .flagSets) }}
+              - {{ . | quote }}
+              {{- end }}
+            subjects:
+              {{- range .subjects }}
+              - type: {{ .type | default "role" | quote }}
+                value: {{ .value | quote }}
+                {{- if .regex }}
+                regex: true
+                {{- end }}
+              {{- end }}
+            permissions:
+              {{- range .permissions }}
+              - resource: {{ .resource | quote }}
+                {{- with .value }}
+                value: {{ . | quote }}
+                {{- end }}
+                actions:
+                  {{- range .actions }}
+                  - {{ . | quote }}
+                  {{- end }}
+              {{- end }}
+          {{- end }}
+{{- end }}

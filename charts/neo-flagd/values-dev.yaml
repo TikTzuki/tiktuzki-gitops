@@ -1,0 +1,140 @@
+# neo-flagd — dev cluster (node1), namespace `demo`.
+#
+# ─── STATE OF PLAY ───────────────────────────────────────────────────────────────────────
+# `auth` and `rbac` below are written out and reviewed, but BOTH ARE OFF, because the image
+# does not implement them yet. The server is unauthenticated in-process today. Consequently
+# the ingress is also off: the admin API shares a port with the console and the sync endpoint,
+# so publishing the host would publish flag writes.
+#
+# In-cluster SDK clients do not need the ingress — they poll the Service directly, which is
+# the actual production path. So this deploys usefully as-is.
+#
+# To go live with SSO, in order:
+#   1. Ship an image with spring-boot-starter-oauth2-client wired up (see the console build plan).
+#   2. Register the client in Keycloak realm `homelab`:
+#        Client ID              neo-flagd
+#        Client authentication  On (confidential)
+#        Valid redirect URIs    https://neo-flagd.tiktuzki.com/login/oauth2/code/keycloak
+#        Web origins            https://neo-flagd.tiktuzki.com
+#      The callback path ends in the REGISTRATION ID (auth.registrationId), not the client id.
+#   3. Add a Group Membership mapper and confirm the `groups` claim actually appears in the
+#      token — an absent claim and a correctly-denied user are indistinguishable from outside.
+#   4. Seal the client secret (see README.md), set auth.enabled: true, sync, verify login.
+#   5. Only then rbac.enabled: true, and re-verify with a non-admin account.
+#   6. Last, ingress.enabled: true.
+
+replicaCount: 2
+
+image:
+  repository: tiktuzki/neo-flagd
+  pullPolicy: Always
+  # TODO: pin to a build sha once the image is published, like charts/checkin does.
+  tag: "latest"
+
+database:
+  host: timescaledb.database
+  port: 5432
+  name: flags
+  username: postgres
+  # Namespace-scoped: this must live in `demo`, not in `database` alongside the server's own
+  # secret. See README.md for the kubeseal command.
+  existingSecret: neo-flagd-secret
+  passwordKey: postgres-password
+  poolSize: 10
+
+flagserver:
+  # Leave at 5s. Measured on this codebase: warm-up gets 6 × this value before the process
+  # exits, and a refresh that outlasts one interval kills the refresh loop permanently.
+  refreshInterval: 5s
+  defaultFlagSet: default
+
+auth:
+  enabled: false
+  registrationId: keycloak
+  issuerUri: https://keycloak.tiktuzki.com/realms/homelab
+  clientId: neo-flagd
+  clientName: Keycloak
+  # `groups` carries authorization. Without the scope the claim is absent and every role
+  # below matches nothing.
+  scope: "openid,profile,email,groups"
+  userNameAttribute: preferred_username
+  existingSecret: neo-flagd-oauth
+  clientSecretKey: client-secret
+
+rbac:
+  enabled: false
+  rolesClaim: groups
+  # Group names must match the claim EXACTLY. Keycloak's Group Membership mapper emits the
+  # full path (`/flag-admins`) unless "Full group path" is turned OFF, so each value is a
+  # regex tolerating both forms — the same trick charts/kafka uses. Tighten once the claim
+  # shape is confirmed.
+  roles:
+    # Full control.
+    - name: flag-admins
+      flagSets: ["*"]
+      subjects:
+        - { type: role, value: "/?flag-admins", regex: true }
+      permissions:
+        - { resource: flagset,                actions: [all] }
+        - { resource: flag,     value: ".*",  actions: [all] }
+        - { resource: audit,                  actions: [view] }
+        - { resource: evaluate,               actions: [run] }
+        - { resource: appconfig,              actions: [view] }
+
+    # Kill switches only. `toggle` may change defaultVariant and nothing else, so an on-call
+    # engineer can turn a feature off without being able to rewrite a targeting rule.
+    - name: flag-operators
+      flagSets: ["*"]
+      subjects:
+        - { type: role, value: "/?flag-operators", regex: true }
+      permissions:
+        - { resource: flag, value: ".*", actions: [view, toggle] }
+        - { resource: audit,             actions: [view] }
+        - { resource: evaluate,          actions: [run] }
+
+    # Read-only. `evaluate` is deliberately NOT granted: the try-it box reveals how targeting
+    # behaves for an arbitrary context, which is more than "view" implies.
+    - name: flag-viewers
+      flagSets: ["*"]
+      subjects:
+        - { type: role, value: "/?flag-viewers", regex: true }
+      permissions:
+        - { resource: flag, value: ".*", actions: [view] }
+        - { resource: audit,             actions: [view] }
+
+extraConfig:
+  logging:
+    level:
+      # The upstream application.yml sets logging.level.io.summer.flagserver, which matches
+      # nothing — the code lives in io.summer.flagd. This is the working spelling.
+      io.summer.flagd: INFO
+
+service:
+  type: ClusterIP
+  port: 8080
+
+# Turn on only after step 6 above.
+ingress:
+  enabled: false
+  className: public
+  annotations: {}
+  hosts:
+    - host: neo-flagd.tiktuzki.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: "1"
+    memory: 768Mi
+
+serviceAccount:
+  create: false
+  automount: true
+  annotations: {}
+  name: ""

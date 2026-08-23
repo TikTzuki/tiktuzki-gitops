@@ -1,0 +1,47 @@
+neo-flagd {{ .Chart.AppVersion }} — release {{ .Release.Name }} in {{ .Release.Namespace }}
+
+In-cluster sync endpoint for SDK clients:
+  http://{{ include "neo-flagd.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.service.port }}/api/v1/flag-sets/{{ .Values.flagserver.defaultFlagSet }}/flags.json
+
+{{- if .Values.ingress.enabled }}
+
+Console / admin:
+{{- range .Values.ingress.hosts }}
+  https://{{ .host }}
+{{- end }}
+{{- if not $.Values.auth.enabled }}
+
+  ⚠️  INGRESS IS ON AND auth.enabled IS FALSE.
+      The admin API is unauthenticated and shares this host with the console. Anyone who can
+      reach it can create, edit and delete flags, and can forge the audit trail by sending any
+      X-Actor header they like. Put an access list on NPM, or turn the ingress off, until the
+      OAuth2 work has landed on this image.
+{{- end }}
+{{- else }}
+
+No ingress. Reach it from your workstation with:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "neo-flagd.fullname" . }} 8080:{{ .Values.service.port }}
+{{- end }}
+
+Checks worth running once after the first sync:
+
+  # Flyway ran and the default flag set exists
+  kubectl -n {{ .Release.Namespace }} logs deploy/{{ include "neo-flagd.fullname" . }} | grep -i flyway
+
+  # Readiness includes the snapshot indicator — this is what dequeues a replica whose
+  # refresh loop has stalled. It must list flagSnapshots.
+  kubectl -n {{ .Release.Namespace }} exec deploy/{{ include "neo-flagd.fullname" . }} -- \
+    wget -qO- localhost:8080/actuator/health/readiness
+
+{{- if gt (int .Values.replicaCount) 1 }}
+
+Running {{ .Values.replicaCount }} replicas. A write through any one of them reaches the others
+within flagserver.refreshInterval ({{ .Values.flagserver.refreshInterval }}) — Postgres is the
+only coordination point.
+{{- end }}
+{{- if .Values.rbac.enabled }}
+
+RBAC is ON and deny-by-default: {{ len .Values.rbac.roles }} role(s) defined, read from the
+"{{ .Values.rbac.rolesClaim }}" claim. A caller matching none of them can do nothing. If everyone
+is locked out, the claim shape is the first thing to check, not the role names.
+{{- end }}
