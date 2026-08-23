@@ -38,6 +38,68 @@ Taking a whole database instead (`database.schema: ""`) means creating it first:
 kubectl exec -n database timescaledb-0 -- psql -U postgres -c 'create database flags'
 ```
 
+**Both credentials live in one Secret**, `neo-flagd-secret` in `demo`, already sealed at
+`templates/db-sealedsecret.yaml`:
+
+| Key | What it is | Consumed as |
+|---|---|---|
+| `pg-password` | copy of the HA cluster's `app` password | `database.passwordKey` |
+| `client-secret` | Keycloak client secret | `auth.clientSecretKey` |
+
+Secrets are namespace-scoped, so the Postgres password has to be copied out of
+`database/timescaledb-ha-secret` — this pod cannot read it there. Re-seal both keys together
+with `--merge-into` so one does not clobber the other:
+
+```sh
+PW=$(kubectl get secret timescaledb-ha-secret -n database -o jsonpath='{.data.app-password}' | base64 -d)
+
+kubectl create secret generic neo-flagd-secret --namespace demo \
+  --from-literal=pg-password="$PW" \
+  --from-literal=client-secret='<from Keycloak>' \
+  --dry-run=client -o yaml \
+| kubeseal --controller-namespace sealed-secrets \
+           --controller-name sealed-secrets-controller \
+           --format yaml \
+           --merge-into templates/db-sealedsecret.yaml
+```
+
+⚠️ Rotating `app-password` on the cluster does not update this copy — that is the trade-off
+every namespace-local credential copy carries. Re-seal when you rotate.
+
+⚠️ The key is `pg-password`, not `app-password`. It is the *value* of the cluster's
+`app-password`; the name differs because this Secret also carries the OAuth secret.
+
+## Chart defaults are off; dev is on
+
+`values.yaml` ships with `auth`, `rbac` and `ingress` all disabled, because a chart that
+authenticates by default fails closed on a cluster with no identity provider.
+`values-dev.yaml` turns all three on.
+
+What dev expects to exist in Keycloak realm `homelab`:
+
+- Client `neo-flagd`, confidential, redirect URI
+  `https://flagd.tiktuzki.com/login/oauth2/code/keycloak` — the path ends in
+  `auth.registrationId`, not the client id.
+- Groups `flag-admins`, `flag-operators`, `flag-viewers`.
+- A Group Membership mapper putting `groups` in the **access** token. Id-token-only leaves
+  bearer callers (CI) with no roles.
+
+Then `GET /api/v1/me` to confirm the claim actually arrived before trusting the policy.
+
+## Prerequisites
+
+**The database.** Nothing to create by hand in dev: `values-dev.yaml` puts neo-flagd in a
+`flagd` schema of the existing `app` database on the HA cluster, and Flyway creates that
+schema on first start because `app` owns the database. Verified against a stand-in with a
+pre-existing `public` table — the four tables and `flyway_schema_history` all land in `flagd`
+and nothing else is touched.
+
+Taking a whole database instead (`database.schema: ""`) means creating it first:
+
+```sh
+kubectl exec -n database timescaledb-0 -- psql -U postgres -c 'create database flags'
+```
+
 **The Postgres password**, in the `demo` namespace. Secrets are namespace-scoped, so the pod
 cannot read `database/timescaledb-ha-secret`; copy the value across:
 
