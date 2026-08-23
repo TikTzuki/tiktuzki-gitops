@@ -62,7 +62,18 @@ data:
     {{- end }}
 
     flagserver:
+      # Switches the server from "unauthenticated, trust the gateway's X-Actor header" to
+      # "authenticate in-process and take the actor from the verified token". The
+      # spring.security block above only supplies the credentials; this is what activates
+      # the secured filter chain.
+      auth:
+        enabled: {{ .Values.auth.enabled }}
+        {{- if .Values.auth.enabled }}
+        registration-id: {{ include "neo-flagd.oauthRegistrationId" . | quote }}
+        actor-claim: {{ .Values.auth.userNameAttribute | quote }}
+        {{- end }}
       refresh-interval: {{ .Values.flagserver.refreshInterval }}
+      startup-timeout: {{ .Values.flagserver.startupTimeout }}
       default-flag-set: {{ .Values.flagserver.defaultFlagSet }}
 
     management:

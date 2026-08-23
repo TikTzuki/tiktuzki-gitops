@@ -51,6 +51,9 @@ flagserver:
   # and a refresh that outlasts one interval kills the refresh loop for the life of the pod.
   # 5s is the tested default.
   refreshInterval: 5s
+  # Budget for warming every flag set at startup. Independent of refreshInterval on purpose:
+  # overrunning it now starts the server cold (and NOT READY) rather than aborting the boot.
+  startupTimeout: 60s
   defaultFlagSet: default
 
 # ─── Authentication (Keycloak / any OIDC) ────────────────────────────────────────────────

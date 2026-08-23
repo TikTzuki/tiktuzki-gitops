@@ -46,6 +46,7 @@ flagserver:
   # Leave at 5s. Measured on this codebase: warm-up gets 6 × this value before the process
   # exits, and a refresh that outlasts one interval kills the refresh loop permanently.
   refreshInterval: 5s
+  startupTimeout: 60s
   defaultFlagSet: default
 
 auth:
