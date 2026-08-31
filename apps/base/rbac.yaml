@@ -1,0 +1,31 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: rbac
+  namespace: devops
+spec:
+  destination:
+    # ClusterRoleBindings are cluster-scoped; this is only where the Application object is
+    # accounted. Same directory-type pattern as ingress-tcp and limits.
+    namespace: devops
+    server: https://kubernetes.default.svc
+  source:
+    repoURL: git@github.com:TikTzuki/tiktuzki-gitops.git
+    targetRevision: main
+    path: infra/rbac
+  project: default
+  syncPolicy:
+    automated:
+      # prune: false on purpose. This binding is what gives you kubectl access; if the
+      # manifest ever went missing from the branch, pruning it would lock every human out
+      # of the cluster and leave no admin credential to fix it with.
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        maxDuration: 3m0s
+        factor: 2

@@ -40,7 +40,7 @@ app-template:
             "gateway": {
               "port": 18789,
               "mode": "local",
-              "trustedProxies": ["192.168.1.14"],
+              "trustedProxies": ["192.168.1.5"],
               "controlUi": {
                 "dangerouslyAllowHostHeaderOriginFallback": true
               }
@@ -71,7 +71,7 @@ app-template:
                 "userTimezone": "Asia/Ho_Chi_Minh",
                 "compaction": {
                   "mode": "safeguard"
-                } 
+                }
               }
             },
             "channels": {

@@ -1,0 +1,31 @@
+# Human operator access to the cluster.
+#
+# There is no User object in Kubernetes. A person is whatever their client certificate
+# says: the API server reads the cert's CN as the username and each O as a group. So the
+# only thing that can live in Git is the *binding* — the certificates themselves are
+# minted on node1 against the cluster CA (see the dev-cluster docs, "kubectl credentials
+# for a personal account").
+#
+# Binding the GROUP rather than each CN is what keeps this file static: issuing a
+# credential to another machine or another engineer means signing a cert with
+# O=tiktuzki-admins, and nothing here changes.
+#
+# ⚠️ Membership is asserted by the certificate, not by this cluster. Anything holding a
+# cert with O=tiktuzki-admins signed by the cluster CA is a cluster admin, and X.509 has
+# no revocation (no CRL, no OCSP) — a leaked cert is valid until it expires. Keep the
+# certificate lifetime short; deleting this binding is the only fast way to cut the whole
+# group off at once.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: tiktuzki-admins
+  labels:
+    app.kubernetes.io/managed-by: argocd
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: tiktuzki-admins

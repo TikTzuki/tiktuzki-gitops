@@ -52,7 +52,7 @@ If this app ever outgrows a single replica, split the two: keep migrations on th
 primary and move request traffic to `timescaledb-ha-pgdog:6432` — but only after the
 stale-read behaviour above is handled.
 
-> Note the host ports differ from the in-cluster ones. `100.66.97.47:5432` is the
+> Note the host ports differ from the in-cluster ones. `100.66.50.60:5432` is the
 > **standalone** `timescaledb`, a different server from the HA cluster on `:5433`.
 > A role that exists on one does not exist on the other.
 

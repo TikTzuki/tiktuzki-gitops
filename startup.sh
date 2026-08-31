@@ -22,7 +22,7 @@ sudo apt install -y openvpn3-client
 
 # Fix kubelite error must match public address:
 #sudo nvim /var/snap/microk8s/current/args/kube-apiserver
-#--advertise-address=192.168.1.14
+#--advertise-address=192.168.1.5
 
 #microk8s kubectl -n kube-system edit daemonset calico-node
 #Inside the calico-node container env:
