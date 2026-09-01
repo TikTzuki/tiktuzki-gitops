@@ -9,8 +9,16 @@
 #   3. Secrets                — every non-system Secret across all namespaces
 #   4. Sealed-Secrets key     — the controller's master key (if installed); THE one secret that
 #                               must survive a migration, or committed SealedSecrets can't decrypt
+#   5. Node-level state       — microk8s CA + certs, the dqlite datastore, netplan (holds the
+#                               Wi-Fi PSK) and NetBird peer identity. Only collectable on node1.
 #
-# Run on node1 (needs kubectl access + sudo for the hostPath tarballs).
+# Run on node1 (needs kubectl access + sudo). Run anywhere else and section 5 is skipped with
+# a warning; sections 1-4 still work over any working kubeconfig.
+#
+# ⚠️ THE OUTPUT IS PLAINTEXT SECRETS. Every Secret in the cluster, the Sealed-Secrets master
+# key, the microk8s CA private key and the Wi-Fi PSK all land in $OUT unencrypted. Wrap it
+# with infra/backup/encrypt-file.sh before it leaves the node — see the NEXT block at the end.
+#
 # Depends only on: kubectl, tar, gzip, sed  (no yq/jq required).
 #
 set -euo pipefail
@@ -36,22 +44,26 @@ DB_DUMPS=(
   "database|postgres-0|postgres|postgres-0"
 )
 
-# Node-local hostPath dirs to tar (dev values). Edit to match your deployed values file.
+# Node-local volume dirs to tar. Must stay in step with infra/storage/create-volume-dirs.sh,
+# which provisions them — a dir listed here but not provisioned there only produces a warning,
+# but one provisioned there and missing here is silently NOT backed up.
 # Sources: charts/*/values-dev.yaml `persistence.localPath` / `.path`.
 DATA_DIRS=(
   /srv/k8s-volumes/tigerbeetle        # ledger — CRITICAL
   /srv/k8s-volumes/kafka              # broker log segments
-  /srv/k8s-volumes/cv-hub             # uploaded blobs (chart mounts .../cv-hub/uploads)
-  /srv/k8s-volumes/openclaw           # openclaw workspace/state
-  /srv/k8s-volumes/checkin-data       # checkin app data
   /srv/k8s-volumes/timescaledb-ha     # Patroni PGDATA, one subdir per replica (0,1,2) — see NOTE
-  /srv/k8s-volumes/timescaledb        # single-node chart (pre-HA) — drop once retired
-  /srv/k8s-volumes/postgres
-  # /srv/k8s-volumes/ollama-models       # re-downloadable model blobs (tens of GB) — off by default
-  # /srv/k8s-volumes/room-manager/logs   # uncomment if you want logs too
-  # /srv/k8s-volumes/monitoring          # Prometheus TSDB is re-derivable and large; Grafana's
-                                         # sqlite holds only annotations/prefs (dashboards and
-                                         # datasources are provisioned from Git). Off by default.
+
+  # Provisioned but deliberately not archived:
+  # /srv/k8s-volumes/monitoring        # Prometheus TSDB is re-derivable and large; Grafana's
+                                       # sqlite holds only annotations/prefs (dashboards and
+                                       # datasources are provisioned from Git).
+
+  # Not provisioned on this node — the charts still declare PVs at these paths, so uncomment
+  # here AND in create-volume-dirs.sh if one is ever deployed:
+  # /srv/k8s-volumes/timescaledb  /srv/k8s-volumes/postgres      # single-node DB charts
+  # /srv/k8s-volumes/cv-hub       /srv/k8s-volumes/openclaw
+  # /srv/k8s-volumes/checkin-data /srv/k8s-volumes/room-manager/logs
+  # /srv/k8s-volumes/ollama-models     # re-downloadable model blobs, tens of GB
 )
 # NOTE: the PGDATA tars are taken from a LIVE cluster, so they are crash-consistent at best.
 # They are a same-version fallback only — the logical dumps above are the authoritative restore
@@ -135,12 +147,71 @@ else
   log "no Sealed-Secrets controller key found in ns/$SEALED_NS (not installed yet — fine)"
 fi
 
+# 5. ------------------------------------------------------------------ node-level state
+# Everything above can be collected from any machine with kubectl. This section only works
+# ON node1, and covers what a fresh microk8s install would NOT reproduce.
+if [ -d /var/snap/microk8s/current ]; then
+  mkdir -p "$OUT/node"
+
+  # The CA and every cert issued from it. Losing ca.key invalidates every kubeconfig ever
+  # minted from this cluster — including your own client cert — and the only fix is to
+  # regenerate the CA and re-mint them all.
+  log "tar microk8s certs"
+  $SUDO tar czf "$OUT/node/microk8s-certs.tgz" -C /var/snap/microk8s/current certs
+
+  # dqlite datastore: the full API state. A convenience, not a necessity — ArgoCD rebuilds
+  # all of it from Git. Worth having when you want the cluster back exactly as it WAS,
+  # rather than as Git says it should be.
+  log "microk8s dbctl backup"
+  $SUDO microk8s dbctl backup -o "$OUT/node/dqlite-backup" \
+    || warn "dbctl backup failed — cluster state not captured (Git still has desired state)"
+
+  # Netplan carries the Wi-Fi PSK in cleartext at mode 0600.
+  log "tar /etc/netplan"
+  $SUDO tar czf "$OUT/node/netplan.tgz" -C /etc netplan
+
+  # NetBird peer identity. Re-enrolling instead of restoring this assigns a NEW overlay IP,
+  # which silently breaks every NPM proxy host still pointing at the old one.
+  if [ -d /var/lib/netbird ] || [ -d /etc/netbird ]; then
+    log "tar netbird state"
+    $SUDO tar czf "$OUT/node/netbird.tgz" -C / \
+      $([ -d /var/lib/netbird ] && echo var/lib/netbird) \
+      $([ -d /etc/netbird ] && echo etc/netbird)
+  fi
+
+  # Facts needed to rebuild the host itself — none of it is in Git.
+  {
+    echo "hostname:  $(hostname)"          # node name is pinned in every PV's nodeAffinity
+    echo "kernel:    $(uname -r)"
+    echo "os:        $(. /etc/os-release && echo "$PRETTY_NAME")"
+    echo
+    echo "== microk8s =="; snap list microk8s 2>/dev/null
+    microk8s status --format short 2>/dev/null | grep -E 'enabled' || true
+    echo
+    echo "== addresses =="; ip -4 -o addr show 2>/dev/null | awk '{print $2, $4}'
+    echo
+    echo "== block devices =="; lsblk -o NAME,SIZE,TYPE,MOUNTPOINT 2>/dev/null
+    echo
+    echo "== fstab =="; cat /etc/fstab
+  } > "$OUT/node/node-info.txt" 2>&1
+
+  # tar/dbctl ran as root; hand the results back so the archive is readable without sudo.
+  $SUDO chown -R "$(id -u):$(id -g)" "$OUT/node"
+  log "  -> node/ ($(du -sh "$OUT/node" | cut -f1))"
+else
+  warn "not running on node1 — skipped certs, dqlite, netplan and netbird state"
+fi
+
 # --------------------------------------------------------------------------- manifest
 {
   echo "cluster backup $STAMP"
   echo "kubectl context: $("$KUBECTL" config current-context 2>/dev/null || echo n/a)"
   echo
-  find "$OUT" -type f -printf '%P\t%s bytes\n' | sort
+  # `find -printf` is GNU-only and this script is allowed to run off-node (sections 1-4),
+  # where find is BSD — so size the files portably instead.
+  find "$OUT" -type f ! -name MANIFEST.txt | sort | while read -r f; do
+    printf '%s\t%s bytes\n' "${f#"$OUT"/}" "$(wc -c <"$f" | tr -d ' ')"
+  done
 } > "$OUT/MANIFEST.txt"
 
 log "done. Contents:"
@@ -148,6 +219,10 @@ cat "$OUT/MANIFEST.txt"
 cat <<EOF
 
 NEXT:
-  • Copy "$OUT" off-box (it contains plaintext secrets + DB data — encrypt at rest).
+  • Encrypt it, then copy it off-box — it holds plaintext secrets, the Sealed-Secrets
+    master key, the microk8s CA key and the Wi-Fi PSK:
+        tar czf $OUT.tgz -C "$(dirname "$OUT")" "$(basename "$OUT")"
+        infra/backup/encrypt-file.sh $OUT.tgz
+        rm -rf "$OUT" $OUT.tgz        # once the .gpg is copied somewhere else
   • To rebuild on a new server, follow infra/backup/RESTORE.md.
 EOF
