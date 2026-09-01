@@ -39,14 +39,22 @@ newest="$(ssh "$HOST" "ls -1d '$REMOTE_DIR'/20*-* 2>/dev/null | sort | tail -1" 
 
 stamp="$(basename "$newest")"
 dest="$LOCAL_DIR/$stamp"
-[ -e "$dest" ] && die "$dest already exists — already pulled this run?"
-[ -e "$dest.tgz.gpg" ] && die "$dest.tgz.gpg already exists — already pulled and encrypted this run"
+
+[ -e "$dest.tgz.gpg" ] && die "$dest.tgz.gpg already exists — this run is already pulled and encrypted"
+# A dest with a MANIFEST.txt is a complete pull; refuse to touch it. Without one it is the
+# wreckage of an interrupted attempt, and rsync is idempotent, so just carry on into it.
+if [ -e "$dest" ]; then
+  [ -f "$dest/MANIFEST.txt" ] && die "$dest already exists and looks complete — already pulled?"
+  log "resuming an incomplete previous pull into $dest"
+fi
 
 mkdir -p "$LOCAL_DIR"; chmod 700 "$LOCAL_DIR"
 umask 077
 
 log "rsync $stamp"
-rsync -a --info=stats1 "$HOST:$newest/" "$dest/"
+# --stats, not --info=stats1: macOS ships openrsync (protocol 29, "rsync 2.6.9 compatible"),
+# which has no --info at all. --stats is understood by both it and GNU rsync 3.x.
+rsync -a --stats "$HOST:$newest/" "$dest/"
 
 # A run that died mid-way still leaves a directory behind. The manifest is written last, so
 # its presence is the marker that backup.sh actually reached the end.
