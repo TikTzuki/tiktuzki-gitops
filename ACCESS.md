@@ -222,6 +222,36 @@ break-glass path** into Argo CD — recovery is a `kubectl patch` on `argocd-cm`
 
 ---
 
+## Credentials that live outside this cluster
+
+Everything above is recoverable by reading a Secret out of a running cluster. The rows here
+are not — they live in a third-party console, on node1's filesystem, or only in a password
+manager. **This table is the scope of `infra/backup/`**: it is the list of things a rebuilt
+node cannot re-derive on its own.
+
+| Credential | Where it lives | If lost | Backed up |
+|---|---|---|---|
+| **Sealed-Secrets master key** | `sealed-secrets/sealed-secrets-key` (4096-bit RSA, expires 2036-08-29) | every committed `SealedSecret` is permanently undecryptable — every value must be re-sealed from source | `~/cluster-backups/sealed-secrets-key.yaml.gpg` (AES-256, passphrase in password manager) |
+| microk8s CA | node1 `/var/snap/microk8s/current/certs/ca.{crt,key}` | every kubeconfig is invalid; re-mint all client certs | ✗ — Phase 2 |
+| kubectl client cert (`tiktuzki`) | this machine, `~/.kube/config` | re-mint from the CA above; it is a 90-day cert that expires regardless | ✗ (regenerable) |
+| Wi-Fi PSK | node1 `/etc/netplan/00-installer-config.yaml` (mode 0600) | re-read it off the router | ✗ — Phase 2 |
+| NetBird peer state | node1 `/var/lib/netbird/` | re-enrolment issues a **new overlay IP**, which breaks every NPM proxy host — the `100.66.97.47` → `100.66.50.60` failure, again | ✗ — Phase 2 |
+| NetBird setup key | NetBird dashboard | reissue | n/a |
+| Google OAuth client (ArgoCD SSO) | Google Cloud Console; the secret is copied into `devops/argocd-oidc-secret` | SSO login fails — recover through local `admin`, which is why `admin.enabled` stays on until SSO is proven | reissue in console |
+| ArgoCD server signing key | `devops/argocd-secret` | all ArgoCD sessions and API tokens are invalidated; log in again | ✗ (regenerable) |
+| Git repo deploy key | **not configured** — there is no `argocd.argoproj.io/secret-type=repository` Secret in `devops` | ArgoCD cannot pull the private repo, so every `apps/dev/*` app (SSH `repoURL`) will fail to sync | n/a — see note below |
+| NPM admin + proxy hosts | the VPS, outside Kubernetes | TLS termination and all `*.tiktuzki.com` routing | ✗ — outside this repo |
+| Cloudflare DNS | Cloudflare | name resolution for `tiktuzki.com` | n/a |
+
+> ⚠️ **The passphrase is now part of the backup.** `sealed-secrets-key.yaml.gpg` is encrypted
+> symmetrically on purpose: encrypting a DR backup to a GPG *keypair* would create a second
+> irreplaceable secret that also needs backing up, on a machine that may be the one that died.
+> The cost of that choice is that losing the passphrase is exactly as bad as losing the key.
+
+> ⚠️ **No ArgoCD repository credential exists yet.** `apps/base/*` uses public Helm repos and
+> syncs fine, but everything under `apps/dev/` points at `git@github.com:TikTzuki/tiktuzki-gitops.git`
+> over SSH. Those apps cannot sync until a deploy key is registered.
+
 ## Known credential debt
 
 - **`database/database-secret`** still holds `kafka-admin-password`, `postgres-password` and
