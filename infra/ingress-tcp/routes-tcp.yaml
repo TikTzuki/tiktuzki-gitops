@@ -1,0 +1,137 @@
+# TCP passthrough for the Traefik ingress controller.
+#
+# Replaces the nginx `nginx-ingress-tcp-microk8s-conf` ConfigMap. Traefik needs TWO
+# pieces per service, not one:
+#
+#   1. an entryPoint + hostPort — static config, in apps/base/traefik.yaml
+#   2. an IngressRouteTCP binding that entryPoint to a Service — this file
+#
+# Miss (1) and nothing listens. Miss (2) and the port listens but refuses every
+# connection. Both must name the same entryPoint.
+#
+# `HostSNI(`*`)` is the catch-all match, and is the ONLY valid match for a non-TLS
+# entryPoint: SNI is a TLS handshake field, so on a plaintext port there is no hostname
+# to route on. One entryPoint therefore serves exactly one backend — which is why each
+# database needs its own port, exactly as it did under nginx.
+#
+# These objects live in `database` because an IngressRouteTCP resolves Services in its
+# own namespace.
+#
+# ⚠️ hostPort is iptables DNAT, not a listening socket. `ss -ltn` shows nothing on these
+# ports even when they are working. Test with `nc -z node1 5432` or a real client.
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRouteTCP
+metadata:
+  name: timescaledb
+  namespace: database
+spec:
+  entryPoints: [ postgres ]
+  routes:
+    - match: HostSNI(`*`)
+      services:
+        - name: timescaledb
+          port: 5432
+---
+# Raw TCP to whichever node is currently the Patroni leader — no pooler in the path.
+# The one endpoint Debezium must use: logical decoding speaks the streaming-replication
+# protocol, which a transaction-mode pooler does not proxy. Also correct for
+# pg_basebackup and migrations that must not be multiplexed onto a shared backend.
+apiVersion: traefik.io/v1alpha1
+kind: IngressRouteTCP
+metadata:
+  name: timescaledb-ha-primary
+  namespace: database
+spec:
+  entryPoints: [ pg-primary ]
+  routes:
+    - match: HostSNI(`*`)
+      services:
+        - name: timescaledb-ha-haproxy
+          port: 5000
+---
+# Replicas only, round-robin. Read-only by construction.
+apiVersion: traefik.io/v1alpha1
+kind: IngressRouteTCP
+metadata:
+  name: timescaledb-ha-replica
+  namespace: database
+spec:
+  entryPoints: [ pg-replica ]
+  routes:
+    - match: HostSNI(`*`)
+      services:
+        - name: timescaledb-ha-haproxy
+          port: 5001
+---
+# What applications should use: pooling + read/write split, writes always landing on the
+# current leader.
+#
+# ⚠️ Reads may be STALE — replication is asynchronous, and a read in a separate
+# transaction right after a write can hit a replica that has not replayed it. Reads
+# inside the writing transaction are safe. See charts/timescaledb-ha/README.md.
+apiVersion: traefik.io/v1alpha1
+kind: IngressRouteTCP
+metadata:
+  name: timescaledb-ha-pgdog
+  namespace: database
+spec:
+  entryPoints: [ pgdog ]
+  routes:
+    - match: HostSNI(`*`)
+      services:
+        - name: timescaledb-ha-pgdog
+          port: 6432
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRouteTCP
+metadata:
+  name: redis
+  namespace: database
+spec:
+  entryPoints: [ redis ]
+  routes:
+    - match: HostSNI(`*`)
+      services:
+        - name: redis-sentinel
+          port: 6379
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRouteTCP
+metadata:
+  name: redis-sentinel
+  namespace: database
+spec:
+  entryPoints: [ sentinel ]
+  routes:
+    - match: HostSNI(`*`)
+      services:
+        - name: redis-sentinel
+          port: 26379
+---
+# SASL_PLAINTEXT listener. Authenticates via SCRAM but does NOT encrypt — see ACCESS.md.
+apiVersion: traefik.io/v1alpha1
+kind: IngressRouteTCP
+metadata:
+  name: kafka
+  namespace: database
+spec:
+  entryPoints: [ kafka ]
+  routes:
+    - match: HostSNI(`*`)
+      services:
+        - name: kafka
+          port: 9094
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRouteTCP
+metadata:
+  name: tigerbeetle
+  namespace: database
+spec:
+  entryPoints: [ tigerbeetle ]
+  routes:
+    - match: HostSNI(`*`)
+      services:
+        - name: tigerbeetle
+          port: 3000

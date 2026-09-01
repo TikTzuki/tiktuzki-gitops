@@ -1,0 +1,42 @@
+# ArgoCD ClusterRoleBindings, corrected for this cluster's namespace.
+#
+# Upstream `install.yaml` hardcodes `namespace: argocd` in every ClusterRoleBinding
+# subject. Installing with `kubectl apply -n devops` rewrites the NAMESPACED objects but
+# leaves those cluster-scoped subjects pointing at a namespace that does not exist here,
+# so the controller's ServiceAccount ends up with no cluster permissions at all.
+#
+# The failure is indirect and easy to misread: every Application sits at `Unknown` with
+#
+#   ComparisonError: failed to load initial state of resource ResourceClaimTemplate...
+#   resourceclaimtemplates.resource.k8s.io is forbidden
+#
+# which looks like a DRA/Kubernetes-1.35 incompatibility. It isn't — the controller cannot
+# list ANY cluster-scoped resource, and `resource.k8s.io` merely happens to be first
+# alphabetically when it builds its cache. The ClusterRole itself already grants */*/*.
+#
+# ⚠️ Apply this AFTER the upstream install.yaml, or it will be overwritten by it.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: argocd-application-controller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: argocd-application-controller
+subjects:
+  - kind: ServiceAccount
+    name: argocd-application-controller
+    namespace: devops
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: argocd-server
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: argocd-server
+subjects:
+  - kind: ServiceAccount
+    name: argocd-server
+    namespace: devops

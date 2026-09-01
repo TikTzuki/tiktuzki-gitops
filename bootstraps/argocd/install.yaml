@@ -40,7 +40,9 @@ metadata:
   name: argocd-server-ingress
   namespace: devops
   annotations:
-    nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+    # Traefik's equivalent of nginx's backend-protocol: HTTPS. Required because
+    # argocd-server terminates its own TLS on 8080, so the proxy must speak HTTPS to it.
+    traefik.ingress.kubernetes.io/service.serversscheme: https
 spec:
   ingressClassName: public
   rules:

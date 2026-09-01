@@ -17,7 +17,7 @@ metadata:
   annotations:
     {{- toYaml . | nindent 4 }}
     {{- if $.Values.keycloak.httpsEnabled }}
-    nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+    traefik.ingress.kubernetes.io/service.serversscheme: https
     {{- end }}
   {{- end }}
 spec:

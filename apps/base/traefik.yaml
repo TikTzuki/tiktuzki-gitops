@@ -1,0 +1,226 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: traefik
+  namespace: devops
+spec:
+  destination:
+    namespace: ingress
+    server: https://kubernetes.default.svc
+  source:
+    repoURL: https://traefik.github.io/charts
+    chart: traefik
+    # 37.4.0 ships Traefik v3.6.2 — the same version `microk8s enable ingress` installs on
+    # 1.35. Pinned so a chart release never silently changes the entryPoints below.
+    targetRevision: 37.4.0
+    helm:
+      releaseName: traefik
+      valuesObject:
+        # DaemonSet, not Deployment: one controller per node binding the host ports,
+        # matching the topology the old nginx ingress had.
+        deployment:
+          kind: DaemonSet
+
+        # ⚠️ maxSurge MUST be 0 with hostPort.
+        # The chart defaults to maxSurge=1/maxUnavailable=0, which starts the new pod
+        # before removing the old one. On a single node the new pod then cannot bind
+        # :80/:443/:5432/... because the old pod still holds them, so it sits Pending:
+        #
+        #   0/1 nodes are available: 1 node(s) didn't have free ports for the requested
+        #   pod ports
+        #
+        # and the rollout deadlocks forever — the old pod keeps serving, so nothing looks
+        # broken except that config changes never take effect. Stopping first is the only
+        # option that terminates; it costs a few seconds of ingress downtime per update.
+        updateStrategy:
+          type: RollingUpdate
+          rollingUpdate:
+            maxSurge: 0
+            maxUnavailable: 1
+
+        # ─── entryPoints ──────────────────────────────────────────────────────────
+        # Every key here becomes a Traefik entryPoint AND a container port. This is
+        # STATIC configuration: Traefik reads it at startup, so adding a TCP service
+        # later means editing this list and restarting the pod — unlike the old nginx
+        # TCP ConfigMap, which was hot-reloaded.
+        #
+        # hostPort is what makes a port reachable as node1:<port>, and therefore over the
+        # NetBird overlay. Verified for :80; the CNI portmap DNAT that implements hostPort
+        # carries overlay traffic fine, which is why the old "ingress must run in
+        # hostNetwork mode" workaround is no longer needed.
+        #
+        # ⚠️ hostPort binds via iptables DNAT, not a listening socket — `ss -ltn` shows
+        # NOTHING on these ports even when they work. Use `curl` / `nc` to test, never ss.
+        ports:
+          web:
+            port: 8000
+            exposedPort: 80
+            hostPort: 80
+            protocol: TCP
+          websecure:
+            port: 8443
+            exposedPort: 443
+            hostPort: 443
+            protocol: TCP
+
+          # ── raw TCP: databases and brokers ──────────────────────────────────────
+          # These replace infra/ingress-tcp/configmap.yaml. Each one needs a matching
+          # IngressRouteTCP in infra/ingress-tcp/ — an entryPoint with no route listens
+          # and then refuses every connection.
+          postgres:
+            port: 5432
+            exposedPort: 5432
+            hostPort: 5432
+            protocol: TCP
+            expose:
+              default: false
+          # Raw TCP to the current Patroni leader, no pooler in the path. Debezium MUST
+          # use this: logical decoding speaks the streaming-replication protocol, which a
+          # transaction-mode pooler does not proxy.
+          pg-primary:
+            port: 5433
+            exposedPort: 5433
+            hostPort: 5433
+            protocol: TCP
+            expose:
+              default: false
+          pg-replica:
+            port: 5434
+            exposedPort: 5434
+            hostPort: 5434
+            protocol: TCP
+            expose:
+              default: false
+          # What applications should use: pooling + read/write split. Listen port matches
+          # pgdog's own 6432 so the connection string is identical inside and outside.
+          pgdog:
+            port: 6432
+            exposedPort: 6432
+            hostPort: 6432
+            protocol: TCP
+            expose:
+              default: false
+          redis:
+            port: 6379
+            exposedPort: 6379
+            hostPort: 6379
+            protocol: TCP
+            expose:
+              default: false
+          sentinel:
+            port: 26379
+            exposedPort: 26379
+            hostPort: 26379
+            protocol: TCP
+            expose:
+              default: false
+          kafka:
+            port: 9094
+            exposedPort: 9094
+            hostPort: 9094
+            protocol: TCP
+            expose:
+              default: false
+          tigerbeetle:
+            port: 3000
+            exposedPort: 3000
+            hostPort: 3000
+            protocol: TCP
+            expose:
+              default: false
+
+        # ─── backend TLS ──────────────────────────────────────────────────────────
+        # Restores nginx's behaviour. `nginx.ingress.kubernetes.io/backend-protocol: HTTPS`
+        # implied `proxy_ssl_verify off`, so a self-signed backend cert just worked.
+        # Traefik's `service.serversscheme: https` VERIFIES by default, and every backend
+        # here (argocd-server, the k8s dashboard, keycloak) presents a self-signed cert for
+        # a pod IP, so each one fails with:
+        #
+        #   500 · tls: failed to verify certificate: x509: cannot validate certificate for
+        #   10.1.x.x because it doesn't contain any IP SANs
+        #
+        # Acceptable here because these hops are pod-to-pod inside one node, and TLS for
+        # the outside world is terminated upstream at NPM — ACCESS.md already records that
+        # NPM→pod is plain HTTP. The stricter alternative is a ServersTransport CR per
+        # namespace, referenced by annotation; not worth it for a backend whose certificate
+        # is self-signed and unverifiable by construction.
+        additionalArguments:
+          - "--serversTransport.insecureSkipVerify=true"
+
+        # ─── providers ────────────────────────────────────────────────────────────
+        providers:
+          kubernetesIngress:
+            enabled: true
+            allowEmptyServices: true
+            publishedService:
+              enabled: true
+          kubernetesCRD:
+            enabled: true          # required for IngressRouteTCP
+          kubernetesGateway:
+            enabled: true
+
+          # ⚠️ Deliberately OFF, unlike the microk8s addon default.
+          # This provider only claims IngressClasses whose spec.controller is
+          # k8s.io/ingress-nginx — and the compatibility classes below are
+          # traefik.io/ingress-controller, so it matches nothing here anyway. Leaving it
+          # on invites the belief that nginx.ingress.kubernetes.io/* annotations are
+          # honoured when they are silently dropped. Every such annotation in this repo
+          # has been translated to its Traefik equivalent instead.
+          kubernetesIngressNginx:
+            enabled: false
+
+        # The chart's own class. Applications in this repo use `public` (below).
+        ingressClass:
+          enabled: true
+          isDefaultClass: false
+          name: traefik
+
+        # Traefik's dashboard, reachable only via port-forward — it is unauthenticated
+        # and must never get an Ingress. See the Prometheus/Alertmanager note in ACCESS.md
+        # for the same reasoning.
+        ingressRoute:
+          dashboard:
+            enabled: false
+
+        service:
+          # ClusterIP, not the chart's LoadBalancer default: there is no cloud LB here, so
+          # a LoadBalancer Service sits at <pending> forever. Ingress arrives via hostPort.
+          type: ClusterIP
+
+        extraObjects:
+          # `public` is what every Ingress in this repo names, and is the default class so
+          # an Ingress with no className still routes.
+          - apiVersion: networking.k8s.io/v1
+            kind: IngressClass
+            metadata:
+              name: public
+              annotations:
+                ingressclass.kubernetes.io/is-default-class: "true"
+            spec:
+              controller: traefik.io/ingress-controller
+          # Kept only so a stray `ingressClassName: nginx` still routes. It is served by
+          # Traefik's STANDARD provider — the name is a compatibility alias, and carries
+          # none of ingress-nginx's annotation behaviour.
+          - apiVersion: networking.k8s.io/v1
+            kind: IngressClass
+            metadata:
+              name: nginx
+            spec:
+              controller: traefik.io/ingress-controller
+
+  project: default
+  syncPolicy:
+    automated:
+      # prune: false — pruning Traefik takes down every ingress in the cluster, including
+      # the ArgoCD UI used to fix it.
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true      # the Traefik CRDs exceed the annotation size limit
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        maxDuration: 3m0s
+        factor: 2

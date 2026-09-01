@@ -5,7 +5,11 @@ metadata:
   namespace: devops
 spec:
   destination:
-    namespace: ingress
+    # `database` — the IngressRouteTCPs resolve Services in their own namespace, so they
+    # live beside the databases rather than beside the controller. Under nginx this app
+    # delivered a single ConfigMap into `ingress`; under Traefik it delivers one CR per
+    # service into `database`. The matching entryPoints live in apps/base/traefik.yaml.
+    namespace: database
     server: https://kubernetes.default.svc
   source:
     repoURL: git@github.com:TikTzuki/tiktuzki-gitops.git

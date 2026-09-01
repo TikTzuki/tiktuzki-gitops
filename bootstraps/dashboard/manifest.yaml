@@ -40,7 +40,9 @@ metadata:
   name: public-dashboard-ingress
   namespace: kube-system
   annotations:
-    nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+    # Traefik's equivalent of nginx's backend-protocol: HTTPS — the dashboard serves
+    # TLS on its own port.
+    traefik.ingress.kubernetes.io/service.serversscheme: https
 spec:
   ingressClassName: public
   rules:
