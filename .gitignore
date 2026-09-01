@@ -62,3 +62,7 @@ node_modules/
 # one-liners). Ignored as a directory rather than per-file: the whole point of the
 # dir is ad-hoc paste-and-run, so any allowlist would rot on the next note.
 note/
+
+# Filled-in EnvironmentFile for the S3 uploader — holds a live AWS secret key.
+# The real one lives at /etc/cluster-backup/s3.env, never in the repo.
+s3.env
