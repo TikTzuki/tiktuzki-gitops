@@ -48,19 +48,13 @@ fi
 # none, the container runs as its image default — left root-owned here and marked, because
 # guessing wrong yields a confusing permission error at first start rather than a clean one.
 DIRS=(
-  "timescaledb|999:999|single-node TimescaleDB (postgres uid)"
-  "postgres|999:999|single-node Postgres"
   "timescaledb-ha/0|1000:1000|Patroni member 0"
   "timescaledb-ha/1|1000:1000|Patroni member 1"
   "timescaledb-ha/2|1000:1000|Patroni member 2"
   "kafka|1000:1000|broker log segments"
-  "openclaw|1000:1000|openclaw workspace"
-  "room-manager/logs|1000:2000|runAsUser 1000, fsGroup 2000"
   "monitoring/prometheus|1000:2000|prometheus runs 1000:2000"
   "monitoring/grafana|472:472|grafana runs 472:472"
   "tigerbeetle||no securityContext in chart — image default"
-  "cv-hub/uploads||no securityContext in chart — image default"
-  "ollama-models||no securityContext in chart — image default"
 )
 
 for entry in "${DIRS[@]}"; do
@@ -76,7 +70,11 @@ for entry in "${DIRS[@]}"; do
 done
 
 # PGDATA must not be group/world readable or Postgres refuses to start.
-chmod 700 "$ROOT"/timescaledb "$ROOT"/postgres "$ROOT"/timescaledb-ha/? 2>/dev/null || true
+# Only the Patroni members are listed: the single-node timescaledb/postgres charts are not
+# provisioned here. Re-add their paths above AND here if you ever deploy them — the charts
+# still declare PVs at /srv/k8s-volumes/{timescaledb,postgres}, so they would otherwise start
+# against a directory that does not exist.
+chmod 700 "$ROOT"/timescaledb-ha/? 2>/dev/null || true
 
 echo
 echo "==> $ROOT"
