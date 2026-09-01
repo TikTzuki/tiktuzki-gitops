@@ -24,7 +24,11 @@
 set -euo pipefail
 
 # ----------------------------------------------------------------------------- config
-KUBECTL="${KUBECTL:-kubectl}"                       # e.g. `microk8s kubectl`
+# Split on whitespace into an array: node1 has no bare `kubectl` binary, only the
+# `microk8s kubectl` wrapper, and a quoted "$KUBECTL" would look for a command literally
+# named "microk8s kubectl". Invoked as "${KUBECTL[@]}" everywhere below.
+#   on node1:  KUBECTL="microk8s kubectl" ./backup.sh
+read -r -a KUBECTL <<<"${KUBECTL:-kubectl}"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 OUT="${BACKUP_DIR:-$HOME/cluster-backups}/$STAMP"
 SEALED_NS="${SEALED_NS:-sealed-secrets}"            # namespace the controller runs in
@@ -82,12 +86,12 @@ resolve_pod() {
   local ns="$1" ref="$2"
   case "$ref" in
     label:*)
-      "$KUBECTL" -n "$ns" get pod -l "${ref#label:}" --field-selector=status.phase=Running \
+      "${KUBECTL[@]}" -n "$ns" get pod -l "${ref#label:}" --field-selector=status.phase=Running \
           -o go-template='{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}' 2>/dev/null \
         | head -1
       ;;
     *)
-      "$KUBECTL" -n "$ns" get pod "$ref" >/dev/null 2>&1 && printf '%s\n' "$ref"
+      "${KUBECTL[@]}" -n "$ns" get pod "$ref" >/dev/null 2>&1 && printf '%s\n' "$ref"
       ;;
   esac
 }
@@ -100,7 +104,7 @@ for entry in "${DB_DUMPS[@]}"; do
     continue
   fi
   log "pg_dumpall $ns/$pod -> db/${out}.sql.gz"
-  if "$KUBECTL" -n "$ns" exec "$pod" -- pg_dumpall -U "$user" 2>/dev/null \
+  if "${KUBECTL[@]}" -n "$ns" exec "$pod" -- pg_dumpall -U "$user" 2>/dev/null \
       | gzip > "$OUT/db/${out}.sql.gz"; then
     log "  -> db/${out}.sql.gz ($(du -h "$OUT/db/${out}.sql.gz" | cut -f1))"
   else
@@ -127,19 +131,19 @@ strip() { sed -e '/^\s*creationTimestamp:/d' -e '/^\s*resourceVersion:/d' \
               -e '/^\s*uid:/d' -e '/^\s*selfLink:/d'; }
 
 log "exporting secrets (all namespaces, excl. SA tokens + helm releases)"
-"$KUBECTL" get secret -A -o go-template='{{range .items}}{{if and (ne .type "kubernetes.io/service-account-token") (ne .type "helm.sh/release.v1")}}{{.metadata.namespace}} {{.metadata.name}}{{"\n"}}{{end}}{{end}}' \
+"${KUBECTL[@]}" get secret -A -o go-template='{{range .items}}{{if and (ne .type "kubernetes.io/service-account-token") (ne .type "helm.sh/release.v1")}}{{.metadata.namespace}} {{.metadata.name}}{{"\n"}}{{end}}{{end}}' \
   | while read -r ns name; do
       [ -z "$ns" ] && continue
-      "$KUBECTL" -n "$ns" get secret "$name" -o yaml --show-managed-fields=false \
+      "${KUBECTL[@]}" -n "$ns" get secret "$name" -o yaml --show-managed-fields=false \
         | strip > "$OUT/secrets/${ns}.${name}.yaml"
     done
 log "  -> $(ls -1 "$OUT/secrets" | wc -l | tr -d ' ') secret(s) under secrets/"
 
 # 4. ------------------------------------------------------- sealed-secrets master key
-if "$KUBECTL" -n "$SEALED_NS" get secret -l sealedsecrets.bitnami.com/sealed-secrets-key \
+if "${KUBECTL[@]}" -n "$SEALED_NS" get secret -l sealedsecrets.bitnami.com/sealed-secrets-key \
       -o name >/dev/null 2>&1; then
   log "backing up Sealed-Secrets master key from ns/$SEALED_NS"
-  "$KUBECTL" -n "$SEALED_NS" get secret \
+  "${KUBECTL[@]}" -n "$SEALED_NS" get secret \
       -l sealedsecrets.bitnami.com/sealed-secrets-key -o yaml --show-managed-fields=false \
     | strip > "$OUT/sealed-secrets-key.yaml"
   warn "sealed-secrets-key.yaml is the cluster's decryption key — store it OFFLINE/encrypted."
@@ -205,7 +209,7 @@ fi
 # --------------------------------------------------------------------------- manifest
 {
   echo "cluster backup $STAMP"
-  echo "kubectl context: $("$KUBECTL" config current-context 2>/dev/null || echo n/a)"
+  echo "kubectl context: $("${KUBECTL[@]}" config current-context 2>/dev/null || echo n/a)"
   echo
   # `find -printf` is GNU-only and this script is allowed to run off-node (sections 1-4),
   # where find is BSD — so size the files portably instead.
