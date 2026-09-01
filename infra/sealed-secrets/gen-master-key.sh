@@ -18,7 +18,11 @@ set -euo pipefail
 OUT="${1:-$HOME/cluster-backups/sealed-secrets-key.yaml}"
 NS="${SEALED_NS:-sealed-secrets}"
 NAME="${SEALED_KEY_NAME:-sealed-secrets-key}"
-BITS="${SEALED_KEY_BITS:-1024}"     # the controller's own default
+BITS="${SEALED_KEY_BITS:-4096}"     # matches the controller's own `--key-size` default (4096).
+                                    # Was 1024 here, which is below current RSA guidance and is
+                                    # NOT what the controller would have picked. Verify with:
+                                    #   kubectl exec -n sealed-secrets deploy/sealed-secrets-controller \
+                                    #     -- /usr/local/bin/controller --help | grep key-size
 DAYS="${SEALED_KEY_DAYS:-3650}"     # kubeseal encrypts against this cert: outlive the cluster
 SUBJ="${SEALED_KEY_SUBJ:-/CN=sealed-secret/O=sealed-secret}"
 

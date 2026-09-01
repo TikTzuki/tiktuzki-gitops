@@ -58,3 +58,7 @@ tgz_cache/
 index_cache/
 helm/
 node_modules/
+# Scratch notes — these have held plaintext credentials (kubeseal --from-literal
+# one-liners). Ignored as a directory rather than per-file: the whole point of the
+# dir is ad-hoc paste-and-run, so any allowlist would rot on the next note.
+note/
