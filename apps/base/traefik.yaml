@@ -133,7 +133,7 @@ spec:
         # Restores nginx's behaviour. `nginx.ingress.kubernetes.io/backend-protocol: HTTPS`
         # implied `proxy_ssl_verify off`, so a self-signed backend cert just worked.
         # Traefik's `service.serversscheme: https` VERIFIES by default, and every backend
-        # here (argocd-server, the k8s dashboard, keycloak) presents a self-signed cert for
+        # here (argocd-server, keycloak) presents a self-signed cert for
         # a pod IP, so each one fails with:
         #
         #   500 · tls: failed to verify certificate: x509: cannot validate certificate for

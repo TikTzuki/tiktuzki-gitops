@@ -9,7 +9,6 @@ EOF
 sudo apt install -y neovim
 sudo usermod -a -G microk8s tik
 newgrp microk8s
-microk8s enable dashboard
 
 #microk8s enable hostpath-storage
 #microk8s enable registry # Docker registry 32000
