@@ -144,14 +144,27 @@ Two halves, because neither is sufficient alone.
 run happens at next boot instead of being skipped in silence.
 
 ### Install on node1
+
+One `install -T` per file, each with an explicit destination **filename**. Do not collapse
+these into a single multi-source command: `install a b` with no trailing directory copies
+`a` over `b`, so a truncated paste silently overwrites one unit with another's contents —
+which produces `Unknown section 'Service'` from the timer and a unit that refuses to load.
+`-T` makes the destination unambiguous, so the same mistake fails loudly instead.
+
 ```bash
-sudo mkdir -p /opt/cluster-backup
-sudo cp infra/backup/backup.sh infra/backup/RESTORE.md /opt/cluster-backup/
-sudo chmod 755 /opt/cluster-backup/backup.sh
-sudo cp infra/backup/systemd/cluster-backup.{service,timer} /etc/systemd/system/
+sudo install -d /opt/cluster-backup
+sudo install -m755 -T infra/backup/backup.sh   /opt/cluster-backup/backup.sh
+sudo install -m644 -T infra/backup/RESTORE.md  /opt/cluster-backup/RESTORE.md
+sudo install -m644 -T infra/backup/systemd/cluster-backup.service /etc/systemd/system/cluster-backup.service
+sudo install -m644 -T infra/backup/systemd/cluster-backup.timer   /etc/systemd/system/cluster-backup.timer
+
+# Confirm each unit is what it should be BEFORE loading it.
+head -1 /etc/systemd/system/cluster-backup.timer     # must be [Unit], with [Timer] below
+grep -c '^\[Service\]' /etc/systemd/system/cluster-backup.timer   # must print 0
+
 sudo systemctl daemon-reload
 sudo systemctl enable --now cluster-backup.timer
-systemctl list-timers cluster-backup.timer      # confirm a NEXT time is scheduled
+systemctl list-timers cluster-backup.timer      # a NEXT time must be shown
 ```
 
 ### Operating it
