@@ -1,0 +1,46 @@
+[Unit]
+Description=Cluster backup — microk8s state, local volumes, secrets, master key
+Documentation=file:///opt/cluster-backup/RESTORE.md
+# The API server must be up or sections 1, 3 and 4 silently produce nothing useful.
+Wants=network-online.target
+After=network-online.target snap.microk8s.daemon-kubelite.service snap.microk8s.daemon-k8s-dqlite.service
+
+[Service]
+Type=oneshot
+
+# Runs as root deliberately: the script needs to read /var/snap/microk8s/current/certs,
+# /etc/netplan and /var/lib/netbird, and to tar root-owned dirs under /srv/k8s-volumes.
+# As root its internal `SUDO` resolves to empty, so nothing prompts.
+User=root
+
+# node1 has no bare kubectl binary — only the microk8s wrapper. The quotes matter: without
+# them systemd splits on the space and KUBECTL becomes just "microk8s".
+Environment="KUBECTL=microk8s kubectl"
+
+# Staged on the 492G data volume; / has only ~100G and is shared with the OS and containerd.
+Environment="BACKUP_DIR=/srv/k8s-volumes/backups"
+Environment="BACKUP_KEEP=7"
+
+ExecStart=/opt/cluster-backup/backup.sh
+
+# UMask=0077 above means root writes these 0700/root, which `pull-backup.sh` cannot rsync as
+# the tik user. Hand the tree over instead of granting NOPASSWD sudo for rsync — tik can
+# already become root on this box, so this concedes nothing, and the mode stays 0700 so no
+# other account gains access.
+ExecStartPost=/usr/bin/chown -R tik:tik /srv/k8s-volumes/backups
+
+# 0077: the output contains every cluster Secret, the Sealed-Secrets master key, the microk8s
+# CA private key and the Wi-Fi PSK. Nothing but root should be able to read any of it.
+UMask=0077
+
+# Backups are never urgent; a pg_dump plus several GB of tar should not make the cluster
+# stutter. Deprioritise both CPU and disk.
+Nice=10
+IOSchedulingClass=idle
+
+# A large tigerbeetle/kafka volume can take a while; do not let systemd kill it mid-tar and
+# leave a half-written archive that looks like a real backup.
+TimeoutStartSec=2h
+
+[Install]
+WantedBy=multi-user.target

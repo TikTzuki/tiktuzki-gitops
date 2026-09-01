@@ -125,8 +125,50 @@ microk8s kubectl get pods -A | grep -vE 'Running|Completed'   # nothing stuck
 # spot-check data: row counts, TigerBeetle account lookups, a Keycloak login, cv-hub uploads.
 ```
 
-## Backup hygiene
-- `backup.sh` output contains **plaintext secrets and DB data** — store it encrypted/off-box.
-- Schedule it (cron on node1, or a k8s CronJob) and keep N rotated copies.
-- Adopting Sealed Secrets (option b) shrinks the secret-backup surface to a **single** key file
-  (`sealed-secrets-key.yaml`); everything else then lives safely in Git.
+## How backups actually run
+
+Two halves, because neither is sufficient alone.
+
+| | Where | What | Schedule |
+|---|---|---|---|
+| **Stage** | node1, `cluster-backup.timer` → `backup.sh` | writes a timestamped run to `/srv/k8s-volumes/backups`, keeps 7 | daily 02:30, `Persistent=true` |
+| **Retain** | your laptop, `pull-backup.sh` | rsyncs the newest run, encrypts it, shreds the plaintext | manual |
+
+> ⚠️ **The staged copy on node1 is not a backup.** `ubuntu-vg/root` and `ubuntu-vg/k8s-data`
+> are two LVs on the *same physical disk* (`sda`). A disk failure — the likeliest hardware
+> failure on that box — destroys the cluster and all seven staged runs together. Only what
+> `pull-backup.sh` takes off the node counts, and only once it also exists somewhere that is
+> not your laptop.
+
+`Persistent=true` is why this is a systemd timer and not cron: if the node is off at 02:30 the
+run happens at next boot instead of being skipped in silence.
+
+### Install on node1
+```bash
+sudo mkdir -p /opt/cluster-backup
+sudo cp infra/backup/backup.sh infra/backup/RESTORE.md /opt/cluster-backup/
+sudo chmod 755 /opt/cluster-backup/backup.sh
+sudo cp infra/backup/systemd/cluster-backup.{service,timer} /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now cluster-backup.timer
+systemctl list-timers cluster-backup.timer      # confirm a NEXT time is scheduled
+```
+
+### Operating it
+```bash
+sudo systemctl start cluster-backup.service     # run once, now
+journalctl -u cluster-backup.service -f         # watch it
+journalctl -u cluster-backup.service -n 50      # why did last night fail?
+./infra/backup/pull-backup.sh                   # from the LAPTOP; prompts for a passphrase
+```
+
+### Hygiene
+- Output is **plaintext**: every cluster Secret, the Sealed-Secrets master key, the microk8s
+  CA private key and the Wi-Fi PSK. It is `0700 tik` on node1 and encrypted the moment it
+  leaves. Never copy an unencrypted run anywhere else.
+- Encryption deliberately happens on the laptop, not node1. The archive holds nothing that is
+  not already on node1 in the clear, so encrypting it there would protect nothing while
+  forcing a passphrase or private key onto the machine being backed up.
+- Retention keeps old secrets alive: a credential rotated today is still readable in
+  yesterday's run for 7 days. Shorten `BACKUP_KEEP` if that matters more than history.
+- A restore you have never performed is a hypothesis. Test one.

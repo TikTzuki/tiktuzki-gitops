@@ -32,6 +32,7 @@ read -r -a KUBECTL <<<"${KUBECTL:-kubectl}"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 OUT="${BACKUP_DIR:-$HOME/cluster-backups}/$STAMP"
 SEALED_NS="${SEALED_NS:-sealed-secrets}"            # namespace the controller runs in
+KEEP="${BACKUP_KEEP:-7}"                            # timestamped runs to keep; 0 disables pruning
 
 # Logical DB dumps, one per line: "namespace|pod-or-selector|superuser|output-basename"
 #
@@ -217,6 +218,21 @@ fi
     printf '%s\t%s bytes\n' "${f#"$OUT"/}" "$(wc -c <"$f" | tr -d ' ')"
   done
 } > "$OUT/MANIFEST.txt"
+
+# ------------------------------------------------------------------------- retention
+# Timestamp dirs are YYYYmmdd-HHMMSS, so lexical order == chronological order.
+# `head -n -N` would be simpler but is GNU-only, and this script also runs on macOS.
+if [ "$KEEP" -gt 0 ]; then
+  BASE="$(dirname "$OUT")"
+  total="$(find "$BASE" -maxdepth 1 -type d -name '20*-*' | wc -l | tr -d ' ')"
+  if [ "$total" -gt "$KEEP" ]; then
+    find "$BASE" -maxdepth 1 -type d -name '20*-*' | sort | head -n "$((total - KEEP))" \
+      | while read -r old; do
+          log "prune $old (keeping newest $KEEP)"
+          $SUDO rm -rf "$old"
+        done
+  fi
+fi
 
 log "done. Contents:"
 cat "$OUT/MANIFEST.txt"

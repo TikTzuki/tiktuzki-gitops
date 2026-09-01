@@ -1,0 +1,18 @@
+[Unit]
+Description=Daily cluster backup
+Documentation=file:///opt/cluster-backup/RESTORE.md
+
+[Timer]
+# 02:30 local. Away from 02:00, where half the distro's own timers cluster.
+OnCalendar=*-*-* 02:30:00
+
+# Persistent=true is the reason to use a timer over cron here: if the node is asleep or
+# powered off at 02:30, the run happens at next boot instead of being skipped silently.
+# A homelab that is off overnight would otherwise never back up at all.
+Persistent=true
+
+# Avoids a thundering herd against the API server if other timers land on the same minute.
+RandomizedDelaySec=15m
+
+[Install]
+WantedBy=timers.target
