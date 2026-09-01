@@ -2,6 +2,7 @@ touch ~/.bash_aliases
 cat <<EOF >> ~/.bash_aliases
 alias mk='microk8s'
 alias k='microk8s kubectl'
+alias kubectl='microk8s kubectl'
 alias kst='microk8s kubectl -n kube-system'
 EOF
 
