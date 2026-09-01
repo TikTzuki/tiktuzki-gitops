@@ -29,7 +29,38 @@ values) lives in this repo. A migration is therefore *not* a full-server clone �
 
 ## Restore procedure (run on the NEW server)
 
-### 0. Prereqs
+### 0a. Start the Deep Archive thaw — do this FIRST
+
+The bulk half sits in Glacier Deep Archive and takes **12-48 hours** to become readable. Kick
+it off before anything else; the whole rebuild below runs while it thaws, which hides almost
+all of that wait. Forget it and you will finish the rebuild and then sit idle for half a day.
+
+```bash
+STAMP=20260901-093329           # the run you are restoring
+aws s3api restore-object --bucket "$S3_BUCKET" \
+  --key "node1/bulk/$STAMP.tar.zst.age" \
+  --restore-request 'Days=7,GlacierJobParameters={Tier=Standard}'
+```
+
+### 0b. Fetch and open the critical half
+
+`STANDARD_IA`, so this one is immediate. It carries the master key, the CA, the secrets and
+the node state — everything the steps below need.
+
+```bash
+aws s3 cp "s3://$S3_BUCKET/node1/critical/$STAMP.tar.zst.age" .
+age -d -i backup-identity.txt "$STAMP.tar.zst.age" | zstd -d | tar xv
+```
+
+`backup-identity.txt` is the age private key from your password manager. It never existed on
+node1 — that is deliberate, and it is why a stolen node could not read its own backups.
+
+Later, once the thaw completes (poll with
+`aws s3api head-object --bucket "$S3_BUCKET" --key "node1/bulk/$STAMP.tar.zst.age" --query Restore`
+until `ongoing-request` reads `false`), fetch the bulk half the same way. It supplies
+`db/` and `data/` for steps 1 and 5.
+
+### 0c. Prereqs on the new host
 ```bash
 sudo hostnamectl set-hostname node1                       # gotcha #1
 
@@ -127,18 +158,32 @@ microk8s kubectl get pods -A | grep -vE 'Running|Completed'   # nothing stuck
 
 ## How backups actually run
 
-Two halves, because neither is sufficient alone.
+One timer, two steps. The second is the one that matters.
 
-| | Where | What | Schedule |
+| | What runs | What it does | Schedule |
 |---|---|---|---|
-| **Stage** | node1, `cluster-backup.timer` → `backup.sh` | writes a timestamped run to `/srv/k8s-volumes/backups`, keeps 7 | daily 02:30, `Persistent=true` |
-| **Retain** | your laptop, `pull-backup.sh` | rsyncs the newest run, encrypts it, shreds the plaintext | manual |
+| **Collect** | `backup.sh` | writes a timestamped run to `/srv/k8s-volumes/backups`, keeps 7 | daily 02:30, `Persistent=true` |
+| **Ship** | `cluster-backup upload` | archives, encrypts to an age recipient, pushes to S3 | same run, via drop-in |
+
+The upload splits each run in two, because Deep Archive takes 12-48 hours to thaw:
+
+| half | contents | class | cadence |
+|---|---|---|---|
+| `critical` | manifest, master key, secrets, node state | `STANDARD_IA` | every run |
+| `bulk` | `db/`, `data/` | `DEEP_ARCHIVE` | `UPLOAD_BULK_DOW`, default Sunday |
+
+Putting the master key and CA in Deep Archive would mean a rebuild cannot *start* for up to
+two days. The critical half is tens of kilobytes, so keeping it warm is effectively free.
+Bulk is weekly because Deep Archive bills a 180-day minimum per object regardless of deletion.
 
 > ⚠️ **The staged copy on node1 is not a backup.** `ubuntu-vg/root` and `ubuntu-vg/k8s-data`
 > are two LVs on the *same physical disk* (`sda`). A disk failure — the likeliest hardware
-> failure on that box — destroys the cluster and all seven staged runs together. Only what
-> `pull-backup.sh` takes off the node counts, and only once it also exists somewhere that is
-> not your laptop.
+> failure on that box — destroys the cluster and all seven staged runs together. Local staging
+> exists so the upload has something to read; **S3 is the backup**.
+
+> `pull-backup.sh` still exists and pulls a passphrase-encrypted copy to your laptop. It is a
+> convenience now, not the strategy: handy when you want a copy in hand, and independent of
+> AWS being reachable.
 
 `Persistent=true` is why this is a systemd timer and not cron: if the node is off at 02:30 the
 run happens at next boot instead of being skipped in silence.
@@ -167,21 +212,63 @@ sudo systemctl enable --now cluster-backup.timer
 systemctl list-timers cluster-backup.timer      # a NEXT time must be shown
 ```
 
+### Then the S3 uploader
+
+`cluster-backup` is a Rust binary from `tik_scripts`. CI publishes one per target; take the
+**musl** build, which is static-pie and has no glibc coupling.
+
+```bash
+gh release download vX.Y.Z -p 'cluster-backup-x86_64-unknown-linux-musl'   # on the laptop
+scp cluster-backup-x86_64-unknown-linux-musl tik@node1:/tmp/
+sudo install -m755 -T /tmp/cluster-backup-x86_64-unknown-linux-musl /opt/cluster-backup/cluster-backup
+
+sudo install -d -m700 /etc/cluster-backup
+sudo install -m600 -T infra/backup/systemd/s3.env.example /etc/cluster-backup/s3.env
+sudo nano /etc/cluster-backup/s3.env      # bucket, region, age1… recipient, AWS keys
+```
+
+Prove it by hand **before** the timer touches it:
+
+```bash
+sudo /opt/cluster-backup/cluster-backup plan
+sudo env $(grep -v '^#' /etc/cluster-backup/s3.env | xargs) \
+     /opt/cluster-backup/cluster-backup upload --force-bulk
+```
+
+Only then install the drop-in that wires it into the nightly run:
+
+```bash
+sudo install -d -m755 /etc/systemd/system/cluster-backup.service.d
+sudo install -m644 -T infra/backup/systemd/cluster-backup.service.d/10-s3-upload.conf \
+     /etc/systemd/system/cluster-backup.service.d/10-s3-upload.conf
+sudo systemctl daemon-reload
+sudo systemctl start cluster-backup.service
+```
+
+A drop-in rather than lines in the base unit: without it the service still collects and stages
+locally, so there is no half-configured state failing nightly. Deleting it plus a
+`daemon-reload` disables uploads and leaves collection running.
+
 ### Operating it
 ```bash
 sudo systemctl start cluster-backup.service     # run once, now
 journalctl -u cluster-backup.service -f         # watch it
 journalctl -u cluster-backup.service -n 50      # why did last night fail?
-./infra/backup/pull-backup.sh                   # from the LAPTOP; prompts for a passphrase
+aws s3 ls s3://$S3_BUCKET/node1/critical/       # what actually landed offsite?
+./infra/backup/pull-backup.sh                   # optional local copy, from the LAPTOP
 ```
 
 ### Hygiene
-- Output is **plaintext**: every cluster Secret, the Sealed-Secrets master key, the microk8s
-  CA private key and the Wi-Fi PSK. It is `0700 tik` on node1 and encrypted the moment it
+- The staged run is **plaintext**: every cluster Secret, the Sealed-Secrets master key, the
+  microk8s CA private key and the Wi-Fi PSK. It is `0700 tik` on node1 and encrypted before it
   leaves. Never copy an unencrypted run anywhere else.
-- Encryption deliberately happens on the laptop, not node1. The archive holds nothing that is
-  not already on node1 in the clear, so encrypting it there would protect nothing while
-  forcing a passphrase or private key onto the machine being backed up.
-- Retention keeps old secrets alive: a credential rotated today is still readable in
-  yesterday's run for 7 days. Shorten `BACKUP_KEEP` if that matters more than history.
-- A restore you have never performed is a hypothesis. Test one.
+- node1 holds only the age **public** key. It can encrypt and upload and cannot read back what
+  it sent, which matters because the host producing the archive is the host being backed up.
+- `backup-identity.txt` is now as critical as the master key: it decrypts every archive. It
+  belongs in a password manager and nowhere on node1.
+- Give the node's IAM user `s3:PutObject` only. A host that cannot delete its own backups
+  cannot be made to destroy them.
+- Retention keeps old secrets alive: a credential rotated today is still readable in older
+  archives. Shorten `BACKUP_KEEP` and the bucket lifecycle if that matters more than history.
+- A restore you have never performed is a hypothesis. Test one — including the Deep Archive
+  thaw, which is the part with a 12-48 hour surprise in it.
