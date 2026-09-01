@@ -1,0 +1,51 @@
+# Argo CD authorization, Google edition. Safe to `kubectl apply` — unlike argocd-cm, the live
+# argocd-rbac-cm has no upstream data keys, so this file owns it entirely.
+#
+#   kubectl apply -f bootstraps/argocd/sso/argocd-rbac-cm-google.yaml
+#
+# Google alternative to argocd-rbac-cm.yaml (Keycloak groups). Apply ONE of the two.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-rbac-cm
+  namespace: devops
+  labels:
+    app.kubernetes.io/name: argocd-rbac-cm
+    app.kubernetes.io/part-of: argocd
+data:
+  # ⚠️ `email`, not `groups` — this is the whole difference from the Keycloak config.
+  # Google issues no groups claim, so subjects on the `g,` lines below are email addresses.
+  # Argo matches `g,` subjects against the claims listed here, in order; without `email`
+  # listed it falls back to `sub`, which for Google is an opaque numeric id like
+  # 104829471028347102938 and matches no readable policy line.
+  scopes: '[email]'
+
+  # ⚠️ Empty string = DENY.
+  #
+  # This matters more with Google than it did with Keycloak. Keycloak only ever issued tokens
+  # to users in realm `homelab`; Google will happily authenticate ANY Google account on earth.
+  # The only thing standing between a stranger's gmail.com login and this cluster is that they
+  # match no line below and therefore get nothing. Never set this to role:readonly.
+  policy.default: ''
+
+  policy.csv: |
+    # ── Admin ─────────────────────────────────────────────────────────────────────
+    # Matched against the `email` claim in the Google ID token. Must be exact and
+    # lowercase — Argo does not normalise case.
+    g, tiktuzki@gmail.com, role:admin
+
+    # ── A middle tier: sync but do not mutate ─────────────────────────────────────
+    # role:readonly cannot trigger a sync; role:admin can delete Applications and edit
+    # repositories and clusters. Most day-to-day work wants exactly the gap between them.
+    # Add teammates with:  g, someone@example.com, role:operator
+    p, role:operator, applications, get,      */*, allow
+    p, role:operator, applications, sync,     */*, allow
+    p, role:operator, applications, action/*, */*, allow
+    p, role:operator, logs,         get,      */*, allow
+    p, role:operator, exec,         create,   */*, deny
+
+    # ── The local admin ───────────────────────────────────────────────────────────
+    # Break-glass while SSO is being proven. Once `admin.enabled: "false"` is set in
+    # argocd-cm this line is inert, and kept only so re-enabling admin restores a
+    # working account in one step.
+    g, admin, role:admin

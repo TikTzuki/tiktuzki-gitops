@@ -1,0 +1,56 @@
+# ⚠️ THIS IS A PATCH FILE — DO NOT `kubectl apply` IT.
+#
+#   kubectl patch cm argocd-cm -n devops --type merge \
+#     --patch-file bootstraps/argocd/sso/argocd-cm-google-patch.yaml
+#
+# `kubectl apply` would strip every key not listed here. The live argocd-cm carries upstream's
+# `resource.customizations.*` and `resource.exclusions` defaults, which control what Argo
+# watches and diffs — losing them silently changes reconciliation across every app.
+#
+# Google alternative to argocd-cm-patch.yaml (Keycloak). Apply ONE of the two, never both:
+# each fully replaces `oidc.config`.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-cm
+  namespace: devops
+data:
+  # ⚠️ REQUIRED for OIDC. Argo builds its redirect URI from this value — with it empty the
+  # callback is constructed against the in-cluster address and Google rejects the login with
+  # `redirect_uri_mismatch`.
+  url: https://argocd.tiktuzki.com
+
+  # Direct OIDC, not Dex — same choice as the Keycloak config, one less component.
+  # Callback path is /auth/callback (it would be /api/dex/callback with Dex in the middle).
+  oidc.config: |
+    name: Google
+    issuer: https://accounts.google.com
+    clientID: 596742570337-asvjj8n18ejkha8l23julahful47jnpi.apps.googleusercontent.com
+    # Resolved at runtime from the argocd-oidc-secret Secret, which MUST carry the label
+    # app.kubernetes.io/part-of=argocd or Argo cannot read it at all.
+    clientSecret: $argocd-oidc-secret:clientSecret
+
+    # ⚠️ No `groups` scope — unlike the Keycloak config. Google's discovery document lists
+    # scopes_supported as exactly [openid, email, profile] and claims_supported with no
+    # `groups` entry. Requesting it does not fail loudly; you simply get a token without
+    # groups, every `g,` line matching a group name matches nothing, and RBAC looks broken.
+    #
+    # Google Groups require Dex's google connector plus a service account with domain-wide
+    # delegation. Until that exists, authorization here is per-email (see
+    # argocd-rbac-cm-google.yaml).
+    requestedScopes:
+      - openid
+      - profile
+      - email
+
+  # ─── Disabling the local admin ────────────────────────────────────────────────────────
+  # ⚠️ DELIBERATELY COMMENTED OUT. Enable this ONLY after a Google login has actually
+  # succeeded AND `argocd account get-user-info` shows role:admin. Setting it before SSO
+  # works locks you out of the UI entirely.
+  #
+  # Recovery if that happens (needs cluster-admin kubectl, which you have):
+  #   kubectl patch cm argocd-cm -n devops --type json \
+  #     -p '[{"op":"remove","path":"/data/admin.enabled"}]'
+  #   kubectl -n devops rollout restart deploy/argocd-server
+  #
+  # admin.enabled: "false"
