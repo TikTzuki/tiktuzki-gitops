@@ -30,7 +30,7 @@ persistence:
     - ReadWriteOnce
   size: 10Gi
   useLocalVolume: true
-  localPath: /mnt/data/postgres
+  localPath: /srv/k8s-volumes/postgres
   nodeAffinity:
     required:
       nodeSelectorTerms:

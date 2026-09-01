@@ -180,8 +180,8 @@ patroni:
 # StatefulSet's volumeClaimTemplate binds to them by storageClassName.
 #
 # The directories must EXIST ON THE NODE before install, one per replica:
-#     sudo mkdir -p /home/tik/data/timescaledb-ha/{0,1,2}
-#     sudo chown -R 1000:1000 /home/tik/data/timescaledb-ha
+#     sudo mkdir -p /srv/k8s-volumes/timescaledb-ha/{0,1,2}
+#     sudo chown -R 1000:1000 /srv/k8s-volumes/timescaledb-ha
 # UID 1000 is `postgres` inside the timescaledb-ha image; without the chown the pods
 # CrashLoop on "could not create directory ... Permission denied".
 persistence:
@@ -192,7 +192,7 @@ persistence:
   # Create static local PVs (one per replica) instead of relying on dynamic provisioning.
   useLocalVolume: true
   # Per-replica path is <localPath>/<ordinal>.
-  localPath: /home/tik/data/timescaledb-ha
+  localPath: /srv/k8s-volumes/timescaledb-ha
   # A dedicated class name, not "": it is what pairs each volumeClaimTemplate with the PVs
   # this chart creates, and keeps them from being grabbed by an unrelated claim.
   storageClass: timescaledb-ha-local

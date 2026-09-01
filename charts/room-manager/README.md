@@ -26,10 +26,10 @@ Before deploying, ensure the local storage path exists on your node:
 ssh user@node-hostname
 
 # Create the directory for logs
-sudo mkdir -p /mnt/data/room-manager/logs
-sudo chmod 755 /mnt/data/room-manager/logs
+sudo mkdir -p /srv/k8s-volumes/room-manager/logs
+sudo chmod 755 /srv/k8s-volumes/room-manager/logs
 # Allow the application user to write logs (adjust UID if needed)
-sudo chown -R 1000:1000 /mnt/data/room-manager/logs
+sudo chown -R 1000:1000 /srv/k8s-volumes/room-manager/logs
 ```
 
 ## Installation
@@ -85,7 +85,7 @@ kubectl apply -f room-manager-application.yaml
 | `persistence.enabled`        | Enable persistence for logs | `true`                        |
 | `persistence.size`           | Storage size for logs       | `5Gi`                         |
 | `persistence.useLocalVolume` | Use local node volume       | `true`                        |
-| `persistence.localPath`      | Path on node                | `/mnt/data/room-manager/logs` |
+| `persistence.localPath`      | Path on node                | `/srv/k8s-volumes/room-manager/logs` |
 
 ### Spring Boot Configuration
 
@@ -200,7 +200,7 @@ kubectl describe pvc
 2. Verify the local path exists and has correct permissions:
 
 ```bash
-ls -la /mnt/data/room-manager/logs
+ls -la /srv/k8s-volumes/room-manager/logs
 ```
 
 ### Pod not starting
@@ -369,7 +369,7 @@ Since logs are persisted on local volume:
 
 ```bash
 # From the node
-tar -czf room-manager-logs-backup-$(date +%Y%m%d).tar.gz /mnt/data/room-manager/logs
+tar -czf room-manager-logs-backup-$(date +%Y%m%d).tar.gz /srv/k8s-volumes/room-manager/logs
 
 # Or from pod
 kubectl exec deployment/room-manager -- tar -czf /tmp/logs-backup.tar.gz /app/logs
@@ -381,5 +381,5 @@ kubectl cp <pod-name>:/tmp/logs-backup.tar.gz ./logs-backup.tar.gz
 For application-specific issues, check:
 
 - Application logs: `kubectl logs -l app.kubernetes.io/name=room-manager`
-- Persistent logs: `/mnt/data/room-manager/logs` on the node
+- Persistent logs: `/srv/k8s-volumes/room-manager/logs` on the node
 - Health status: `http://<node-ip>:30080/actuator/health`

@@ -151,7 +151,7 @@ kafkaUi:
 persistence:
   enabled: true
   useLocalVolume: true
-  localPath: /home/tik/data/kafka
+  localPath: /srv/k8s-volumes/kafka
   size: 20Gi
   accessModes:
     - ReadWriteOnce

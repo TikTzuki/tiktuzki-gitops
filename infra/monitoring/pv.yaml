@@ -8,9 +8,9 @@
 #
 # Create the directories on node1 first, with the UIDs each image actually runs as:
 #
-#   sudo mkdir -p /home/tik/data/monitoring/{prometheus,grafana}
-#   sudo chown -R 1000:2000 /home/tik/data/monitoring/prometheus   # prometheus runs 1000:2000
-#   sudo chown -R 472:472   /home/tik/data/monitoring/grafana      # grafana runs 472:472
+#   sudo mkdir -p /srv/k8s-volumes/monitoring/{prometheus,grafana}
+#   sudo chown -R 1000:2000 /srv/k8s-volumes/monitoring/prometheus   # prometheus runs 1000:2000
+#   sudo chown -R 472:472   /srv/k8s-volumes/monitoring/grafana      # grafana runs 472:472
 #
 # Get the ownership wrong and the pod CrashLoops on "permission denied" opening its data dir.
 #
@@ -68,7 +68,7 @@ spec:
     namespace: monitoring
     name: prometheus-monitoring-kube-prometheus-prometheus-db-prometheus-monitoring-kube-prometheus-prometheus-0
   local:
-    path: /home/tik/data/monitoring/prometheus
+    path: /srv/k8s-volumes/monitoring/prometheus
   nodeAffinity:
     required:
       nodeSelectorTerms:
@@ -114,7 +114,7 @@ spec:
     namespace: monitoring
     name: monitoring-grafana
   local:
-    path: /home/tik/data/monitoring/grafana
+    path: /srv/k8s-volumes/monitoring/grafana
   nodeAffinity:
     required:
       nodeSelectorTerms:

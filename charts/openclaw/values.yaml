@@ -6,7 +6,7 @@ persistence:
   local:
     enabled: false
     node: node1
-    path: /home/tik/data/openclaw
+    path: /srv/k8s-volumes/openclaw
     reclaimPolicy: Retain
 
 # OpenClaw Helm Chart Values

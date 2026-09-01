@@ -247,7 +247,7 @@ persistence:
     - ReadWriteOnce
   size: 5Gi
   useLocalVolume: true
-  localPath: /mnt/data/room-manager/logs
+  localPath: /srv/k8s-volumes/room-manager/logs
   nodeAffinity:
     required:
       nodeSelectorTerms:

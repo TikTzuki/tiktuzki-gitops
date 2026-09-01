@@ -39,16 +39,19 @@ DB_DUMPS=(
 # Node-local hostPath dirs to tar (dev values). Edit to match your deployed values file.
 # Sources: charts/*/values-dev.yaml `persistence.localPath` / `.path`.
 DATA_DIRS=(
-  /home/tik/data/tigerbeetle        # ledger — CRITICAL
-  /home/tik/data/kafka              # broker log segments
-  /home/tik/data/cv-hub             # uploaded blobs (chart mounts .../cv-hub/uploads)
-  /home/tik/data/openclaw           # openclaw workspace/state
-  /home/tik/data/checkin-data       # checkin app data
-  /home/tik/data/timescaledb-ha     # Patroni PGDATA, one subdir per replica (0,1,2) — see NOTE
-  /home/tik/data/timescaledb        # single-node chart (pre-HA) — drop once retired
-  /home/tik/data/postgres
-  # /home/tik/data/ollama-models       # re-downloadable model blobs (tens of GB) — off by default
-  # /home/tik/data/room-manager/logs   # uncomment if you want logs too
+  /srv/k8s-volumes/tigerbeetle        # ledger — CRITICAL
+  /srv/k8s-volumes/kafka              # broker log segments
+  /srv/k8s-volumes/cv-hub             # uploaded blobs (chart mounts .../cv-hub/uploads)
+  /srv/k8s-volumes/openclaw           # openclaw workspace/state
+  /srv/k8s-volumes/checkin-data       # checkin app data
+  /srv/k8s-volumes/timescaledb-ha     # Patroni PGDATA, one subdir per replica (0,1,2) — see NOTE
+  /srv/k8s-volumes/timescaledb        # single-node chart (pre-HA) — drop once retired
+  /srv/k8s-volumes/postgres
+  # /srv/k8s-volumes/ollama-models       # re-downloadable model blobs (tens of GB) — off by default
+  # /srv/k8s-volumes/room-manager/logs   # uncomment if you want logs too
+  # /srv/k8s-volumes/monitoring          # Prometheus TSDB is re-derivable and large; Grafana's
+                                         # sqlite holds only annotations/prefs (dashboards and
+                                         # datasources are provisioned from Git). Off by default.
 )
 # NOTE: the PGDATA tars are taken from a LIVE cluster, so they are crash-consistent at best.
 # They are a same-version fallback only — the logical dumps above are the authoritative restore

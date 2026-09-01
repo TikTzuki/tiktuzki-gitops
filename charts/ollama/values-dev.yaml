@@ -73,7 +73,7 @@ persistence:
   local:
     enabled: true
     node: node1
-    path: /home/tik/data/ollama-models/
+    path: /srv/k8s-volumes/ollama-models/
     reclaimPolicy: Retain
 
 volumes:

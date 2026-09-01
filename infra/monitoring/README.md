@@ -18,9 +18,9 @@ sync both in a single pass and would fail on first install; two apps let the sec
 **1. Create the data directories on node1**, with the UIDs each image actually runs as:
 
 ```bash
-sudo mkdir -p /home/tik/data/monitoring/{prometheus,grafana}
-sudo chown -R 1000:2000 /home/tik/data/monitoring/prometheus
-sudo chown -R 472:472   /home/tik/data/monitoring/grafana
+sudo mkdir -p /srv/k8s-volumes/monitoring/{prometheus,grafana}
+sudo chown -R 1000:2000 /srv/k8s-volumes/monitoring/prometheus
+sudo chown -R 472:472   /srv/k8s-volumes/monitoring/grafana
 ```
 
 **2. Seal the Grafana admin credentials:**

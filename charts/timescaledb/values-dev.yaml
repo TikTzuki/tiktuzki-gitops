@@ -30,7 +30,7 @@ persistence:
   accessModes:
     - ReadWriteOnce
   useLocalVolume: true
-  localPath: /home/tik/data/timescaledb
+  localPath: /srv/k8s-volumes/timescaledb
   nodeAffinity:
     required:
       nodeSelectorTerms:

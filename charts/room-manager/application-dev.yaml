@@ -38,7 +38,7 @@ spec:
           enabled: true
           size: 5Gi
           useLocalVolume: true
-          localPath: /home/tik/data/room-manager/logs
+          localPath: /srv/k8s-volumes/room-manager/logs
           nodeAffinity:
             required:
               nodeSelectorTerms:

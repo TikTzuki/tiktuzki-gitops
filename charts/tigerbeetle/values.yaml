@@ -23,7 +23,7 @@ persistence:
     - ReadWriteOnce
   size: 10Gi
   useLocalVolume: true
-  localPath: /mnt/data/tigerbeetle
+  localPath: /srv/k8s-volumes/tigerbeetle
   nodeAffinity:
     required:
       nodeSelectorTerms:

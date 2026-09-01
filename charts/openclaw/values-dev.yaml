@@ -3,7 +3,7 @@ persistence:
   local:
     enabled: true
     node: node1
-    path: /home/tik/data/openclaw
+    path: /srv/k8s-volumes/openclaw
     reclaimPolicy: Retain
 
 app-template:

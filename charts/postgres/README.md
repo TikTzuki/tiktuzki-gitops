@@ -25,9 +25,9 @@ Before deploying, ensure the local storage path exists on your node:
 ssh user@node-hostname
 
 # Create the directory for PostgreSQL data
-sudo mkdir -p /mnt/data/postgres
-sudo chown -R 999:999 /mnt/data/postgres  # PostgreSQL user UID/GID
-sudo chmod 700 /mnt/data/postgres
+sudo mkdir -p /srv/k8s-volumes/postgres
+sudo chown -R 999:999 /srv/k8s-volumes/postgres  # PostgreSQL user UID/GID
+sudo chmod 700 /srv/k8s-volumes/postgres
 ```
 
 ## Installation
@@ -80,7 +80,7 @@ kubectl apply -f postgres-application.yaml
 | `persistence.enabled`        | Enable persistence               | `true`               |
 | `persistence.size`           | Storage size                     | `10Gi`               |
 | `persistence.useLocalVolume` | Use local node volume            | `true`               |
-| `persistence.localPath`      | Path on node                     | `/mnt/data/postgres` |
+| `persistence.localPath`      | Path on node                     | `/srv/k8s-volumes/postgres` |
 | `service.type`               | Service type                     | `NodePort`           |
 | `service.nodePort`           | NodePort number                  | `30432`              |
 
@@ -154,7 +154,7 @@ kubectl get nodes --show-labels
 2. Verify the local path exists and has correct permissions:
 
 ```bash
-ls -la /mnt/data/postgres
+ls -la /srv/k8s-volumes/postgres
 ```
 
 ### Pod not starting

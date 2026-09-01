@@ -49,7 +49,7 @@ persistence:
     - ReadWriteOnce
   size: 5Gi
   useLocalVolume: true
-  localPath: /mnt/data/cv-hub/uploads
+  localPath: /srv/k8s-volumes/cv-hub/uploads
   nodeAffinity:
     required:
       nodeSelectorTerms:

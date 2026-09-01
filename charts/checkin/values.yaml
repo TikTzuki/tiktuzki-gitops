@@ -157,7 +157,7 @@ persistence:
   local:
     enabled: false
     node: node1
-    path: /home/tik/data/
+    path: /srv/k8s-volumes/
     reclaimPolicy: Retain
 
 # Additional volumes on the output Deployment definition.

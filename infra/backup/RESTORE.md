@@ -14,10 +14,14 @@ values) lives in this repo. A migration is therefore *not* a full-server clone �
 1. **Node name must be `node1`.** Every local PV pins `nodeAffinity` to
    `kubernetes.io/hostname: node1`, and microk8s derives the node name from the OS hostname.
    On the new box: `sudo hostnamectl set-hostname node1` **before** installing microk8s.
-2. **hostPath dirs must pre-exist** at the same paths with the right ownership, or PVs won't
-   mount: the single-node Postgres/TimescaleDB want uid/gid **999**; Kafka, TimescaleDB-HA and
-   openclaw want **1000**. TimescaleDB-HA additionally needs **one subdir per replica**
-   (`.../timescaledb-ha/{0,1,2}`) — the chart creates a static local PV per ordinal.
+2. **A dedicated volume must be mounted at `/srv/k8s-volumes`, and the directories under it
+   must pre-exist** with the right ownership. Every chart here ships a static local PV at an
+   explicit path (`charts/*/templates/pv.yaml`) — a local PV never creates its own directory,
+   and without an `fsGroup` the kubelet never chowns it, so a missing or misowned directory
+   surfaces as CrashLoopBackOff with a permission error rather than a scheduling failure.
+   `infra/storage/create-volume-dirs.sh` creates all of them; it refuses to run unless the
+   volume is actually mounted, because otherwise the data lands on the much smaller root
+   filesystem and fills it.
 3. **External edge is outside k8s.** NPM (TLS, `*.tiktuzki.com`), the NetBird overlay, and DNS
    are repointed to the new node's IP separately — none of it is in the cluster.
 
@@ -28,12 +32,12 @@ values) lives in this repo. A migration is therefore *not* a full-server clone �
 ### 0. Prereqs
 ```bash
 sudo hostnamectl set-hostname node1                       # gotcha #1
-# create the hostPath dirs (gotcha #2) — match your deployed values-dev.yaml files:
-sudo mkdir -p /home/tik/data/{timescaledb,postgres,tigerbeetle,kafka,cv-hub/uploads,room-manager/logs}
-sudo mkdir -p /home/tik/data/{openclaw,checkin-data,ollama-models}
-sudo mkdir -p /home/tik/data/timescaledb-ha/{0,1,2}       # one per Patroni replica
-sudo chown -R 999:999   /home/tik/data/{timescaledb,postgres}
-sudo chown -R 1000:1000 /home/tik/data/{kafka,timescaledb-ha,openclaw}
+
+# gotcha #2 — the data volume. On the original node this is ubuntu-vg/k8s-data (500G)
+# mounted at /srv/k8s-volumes via /etc/fstab. Recreate it, mount it, THEN:
+sudo ./infra/storage/create-volume-dirs.sh
+# That script owns the full path+ownership table, so it stays correct as charts are added.
+# It aborts if /srv/k8s-volumes is not a mount point.
 ```
 
 ### 1. Restore raw volume data (BEFORE deploying workloads)
@@ -50,7 +54,7 @@ PG major version.
 > Kubernetes endpoints — not in the tar. Restoring them onto an empty cluster makes three nodes
 > that each believe they were primary. The supported path is: let Patroni bootstrap a **fresh**
 > empty cluster, then logically restore into the leader (step 5). Re-`chown 1000:1000` and
-> **empty** `/home/tik/data/timescaledb-ha/{0,1,2}` if you extracted them by accident.
+> **empty** `/srv/k8s-volumes/timescaledb-ha/{0,1,2}` if you extracted them by accident.
 
 ### 2. Install microk8s + enable addons
 ```bash

@@ -65,9 +65,9 @@ persistence:
   size: 20Gi
   useLocalVolume: true
   # Create these on node1 before installing, one per replica:
-  #   sudo mkdir -p /home/tik/data/timescaledb-ha/{0,1,2}
-  #   sudo chown -R 1000:1000 /home/tik/data/timescaledb-ha
-  localPath: /home/tik/data/timescaledb-ha
+  #   sudo mkdir -p /srv/k8s-volumes/timescaledb-ha/{0,1,2}
+  #   sudo chown -R 1000:1000 /srv/k8s-volumes/timescaledb-ha
+  localPath: /srv/k8s-volumes/timescaledb-ha
   storageClass: timescaledb-ha-local
   nodeAffinity:
     required:

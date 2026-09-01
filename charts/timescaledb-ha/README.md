@@ -56,8 +56,8 @@ pooler does not proxy.
 postgres UID):
 
 ```bash
-sudo mkdir -p /home/tik/data/timescaledb-ha/{0,1,2}
-sudo chown -R 1000:1000 /home/tik/data/timescaledb-ha
+sudo mkdir -p /srv/k8s-volumes/timescaledb-ha/{0,1,2}
+sudo chown -R 1000:1000 /srv/k8s-volumes/timescaledb-ha
 ```
 
 Skip this and the pods CrashLoop on `could not create directory ... Permission denied`.
@@ -360,7 +360,7 @@ each is catalog plus the TimescaleDB extension. There is nothing to migrate.
 2. Follow "Wiping and re-bootstrapping" below **in full**. Deleting the PVCs without also
    deleting the `timescaledb-ha-*` DCS ConfigMaps is the classic deadlock.
 3. Clear the node directories — a leftover PG17 PGDATA reproduces the exact error above:
-   `sudo rm -rf /home/tik/data/timescaledb-ha/*/*`
+   `sudo rm -rf /srv/k8s-volumes/timescaledb-ha/*/*`
 
 **Worth taking the opportunity:** re-bootstrapping is the only time `post_init` runs again. If
 `bootstrap.cdc.enabled: true` is set before the wipe, the `debezium` / `cdc_reader` roles and
@@ -378,7 +378,7 @@ kubectl -n database delete statefulset timescaledb-ha
 kubectl -n database delete pvc -l cluster-name=timescaledb-ha
 kubectl -n database delete configmap timescaledb-ha-leader timescaledb-ha-config \
                                      timescaledb-ha-failover timescaledb-ha-sync
-sudo rm -rf /home/tik/data/timescaledb-ha/*/*   # on node1
+sudo rm -rf /srv/k8s-volumes/timescaledb-ha/*/*   # on node1
 ```
 
 Deleting the PVCs without deleting those ConfigMaps is the classic deadlock: the DCS still
