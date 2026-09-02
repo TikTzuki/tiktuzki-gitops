@@ -3,7 +3,7 @@
 # There is no User object in Kubernetes. A person is whatever their client certificate
 # says: the API server reads the cert's CN as the username and each O as a group. So the
 # only thing that can live in Git is the *binding* — the certificates themselves are
-# minted on node1 against the cluster CA (see the dev-cluster docs, "kubectl credentials
+# minted on node1 against the cluster CA (see docs/operations/access, "kubectl credentials
 # for a personal account").
 #
 # Binding the GROUP rather than each CN is what keeps this file static: issuing a

@@ -66,12 +66,12 @@ token, and userinfo is the fallback both use.
 
 ## 3. Clients
 
-| | `argocd` | `kafka-ui` |
-|---|---|---|
-| Client authentication | On (confidential) | On (confidential) |
-| Standard flow | On | On |
-| Valid redirect URIs | `https://argocd.tiktuzki.com/auth/callback`<br>`http://localhost:8085/auth/callback` | `https://kafka-ui.tiktuzki.com/login/oauth2/code/keycloak` |
-| Web origins | `https://argocd.tiktuzki.com` | `https://kafka-ui.tiktuzki.com` |
+|                       | `argocd`                                                                               | `kafka-ui`                                                 |
+|-----------------------|----------------------------------------------------------------------------------------|------------------------------------------------------------|
+| Client authentication | On (confidential)                                                                      | On (confidential)                                          |
+| Standard flow         | On                                                                                     | On                                                         |
+| Valid redirect URIs   | `https://argocd.tiktuzki.com/auth/callback`<br />`http://localhost:8085/auth/callback` | `https://kafka-ui.tiktuzki.com/login/oauth2/code/keycloak` |
+| Web origins           | `https://argocd.tiktuzki.com`                                                          | `https://kafka-ui.tiktuzki.com`                            |
 
 The second Argo CD URI is for `argocd login --sso` from the CLI — omit it and the CLI hangs on
 a callback that never resolves.

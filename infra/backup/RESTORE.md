@@ -188,66 +188,16 @@ Bulk is weekly because Deep Archive bills a 180-day minimum per object regardles
 `Persistent=true` is why this is a systemd timer and not cron: if the node is off at 02:30 the
 run happens at next boot instead of being skipped in silence.
 
-### Install on node1
+### Setting the backup up again
 
-One `install -T` per file, each with an explicit destination **filename**. Do not collapse
-these into a single multi-source command: `install a b` with no trailing directory copies
-`a` over `b`, so a truncated paste silently overwrites one unit with another's contents —
-which produces `Unknown section 'Service'` from the timer and a unit that refuses to load.
-`-T` makes the destination unambiguous, so the same mistake fails loudly instead.
+Do **not** follow install steps from this file — they used to live here and drifted out of
+sync with the ones that are actually maintained. The setup runbook is
+[`docs/operations/backup-restore/backup-flow.md`](../../docs/operations/backup-restore/backup-flow.md) in this repo:
+bucket and IAM, the age keypair, the binary, the systemd units, and the drop-in that wires
+the upload into the nightly run.
 
-```bash
-sudo install -d /opt/cluster-backup
-sudo install -m755 -T infra/backup/backup.sh   /opt/cluster-backup/backup.sh
-sudo install -m644 -T infra/backup/RESTORE.md  /opt/cluster-backup/RESTORE.md
-sudo install -m644 -T infra/backup/systemd/cluster-backup.service /etc/systemd/system/cluster-backup.service
-sudo install -m644 -T infra/backup/systemd/cluster-backup.timer   /etc/systemd/system/cluster-backup.timer
-
-# Confirm each unit is what it should be BEFORE loading it.
-head -1 /etc/systemd/system/cluster-backup.timer     # must be [Unit], with [Timer] below
-grep -c '^\[Service\]' /etc/systemd/system/cluster-backup.timer   # must print 0
-
-sudo systemctl daemon-reload
-sudo systemctl enable --now cluster-backup.timer
-systemctl list-timers cluster-backup.timer      # a NEXT time must be shown
-```
-
-### Then the S3 uploader
-
-`cluster-backup` is a Rust binary from `tik_scripts`. CI publishes one per target; take the
-**musl** build, which is static-pie and has no glibc coupling.
-
-```bash
-gh release download vX.Y.Z -p 'cluster-backup-x86_64-unknown-linux-musl'   # on the laptop
-scp cluster-backup-x86_64-unknown-linux-musl tik@node1:/tmp/
-sudo install -m755 -T /tmp/cluster-backup-x86_64-unknown-linux-musl /opt/cluster-backup/cluster-backup
-
-sudo install -d -m700 /etc/cluster-backup
-sudo install -m600 -T infra/backup/systemd/s3.env.example /etc/cluster-backup/s3.env
-sudo nano /etc/cluster-backup/s3.env      # bucket, region, age1… recipient, AWS keys
-```
-
-Prove it by hand **before** the timer touches it:
-
-```bash
-sudo /opt/cluster-backup/cluster-backup plan
-sudo env $(grep -v '^#' /etc/cluster-backup/s3.env | xargs) \
-     /opt/cluster-backup/cluster-backup upload --force-bulk
-```
-
-Only then install the drop-in that wires it into the nightly run:
-
-```bash
-sudo install -d -m755 /etc/systemd/system/cluster-backup.service.d
-sudo install -m644 -T infra/backup/systemd/cluster-backup.service.d/10-s3-upload.conf \
-     /etc/systemd/system/cluster-backup.service.d/10-s3-upload.conf
-sudo systemctl daemon-reload
-sudo systemctl start cluster-backup.service
-```
-
-A drop-in rather than lines in the base unit: without it the service still collects and stages
-locally, so there is no half-configured state failing nightly. Deleting it plus a
-`daemon-reload` disables uploads and leaves collection running.
+It is installed to `/opt/cluster-backup/backup-flow.md` on node1, so it is readable on the
+box even when GitHub is not.
 
 ### Operating it
 ```bash

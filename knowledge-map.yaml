@@ -1,0 +1,61 @@
+# Docs published to the site from OUTSIDE docs/.
+#
+# Read by TikTzuki/scripts/sync-knowledge.sh at build time. Each entry routes one file
+# to a path under the site's docs/ tree and supplies the Docusaurus front matter it needs.
+#
+# Why this exists: the rule in this repo is that a doc lives beside the manifests it
+# describes, so a change to the cluster and the change to its documentation land in the
+# same commit. Moving these into docs/ to publish them would break that. The manifest
+# lets them stay put and still reach the site.
+#
+# Anything NOT listed here and not under docs/operations/ is repo-local and stays unpublished
+# — ACCESS.md and PLAN.md deliberately so.
+#
+# Tags must exist in TikTzuki/tik_space/docs/tags.yml or the site build fails.
+#
+# Published docs are processed as MDX, which is stricter than GitHub markdown. Void tags
+# must be self-closed (`<br />`, not `<br>`) and `{`/`<` in prose must be escaped, or the
+# site build fails. Plain GitHub markdown that has never been published is the usual
+# source of this.
+
+publish:
+  infra/monitoring/README.md:
+    to: operations/observability/monitoring-stack.md
+    title: Monitoring stack
+    tags: [ observability, kubernetes ]
+    sidebar_position: 1
+
+  infra/sealed-secrets/README.md:
+    to: operations/secrets/sealed-secrets.md
+    title: Sealed Secrets — Git-safe secrets
+    tags: [ security, kubernetes ]
+    sidebar_position: 1
+
+  bootstraps/argocd/sso/README.md:
+    to: operations/access/keycloak-sso.md
+    title: Keycloak SSO for Argo CD and kafka-ui
+    tags: [ security, kubernetes ]
+    sidebar_position: 2
+
+  bootstraps/argocd/sso/GOOGLE-SSO.md:
+    to: operations/access/argocd-google-sso.md
+    title: Argo CD SSO with Google
+    tags: [ security, kubernetes ]
+    sidebar_position: 3
+
+  charts/timescaledb-ha/README.md:
+    to: operations/services/timescaledb-ha.md
+    title: TimescaleDB HA (Patroni + pgdog + HAProxy)
+    tags: [ storage, consensus, kubernetes ]
+    sidebar_position: 2
+
+# Categories the manifest needs to create, since no _category_.yaml ships for them.
+categories:
+  operations/observability:
+    label: Observability
+    position: 5
+    slug: /category/ops-observability
+  operations/secrets:
+    label: Secrets
+    position: 6
+    slug: /category/ops-secrets

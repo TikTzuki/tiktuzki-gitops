@@ -1,49 +1,46 @@
+# tiktuzki-gitops
+
+GitOps for **node1** — a single-node MicroK8s cluster reached over a NetBird mesh, with ArgoCD
+syncing everything in this repo onto it.
+
+This repo is the **operational source of truth**: the manifests, and the documentation that
+explains them, both live here. Cluster docs are in **[`docs/`](docs/README.md)**; they are
+mirrored onto [tiktuzki.com](https://www.tiktuzki.com/docs/dev-cluster) at build time and must
+be edited here, never there.
+
+| I want to…                           | Go to                                                |
+|--------------------------------------|------------------------------------------------------|
+| Understand or rebuild the cluster    | [`docs/README.md`](docs/README.md)                   |
+| Find a host, port or credential name | [`ACCESS.md`](ACCESS.md)                             |
+| See what hardening is next           | [`PLAN.md`](PLAN.md)                                 |
+| Recover from a dead server           | [`infra/backup/RESTORE.md`](infra/backup/RESTORE.md) |
+
+## Layout
+
 ```
-gitops/
-├── bootstrap/
-│   └── argocd/
-│       └── install.yaml
-│
-├── clusters/
-│   ├── dev/
-│   │   ├── apps.yaml
-│   │   ├── namespace.yaml
-│   │   └── values/
-│   ├── staging/
-│   │   ├── apps.yaml
-│   │   └── values/
-│   └── prod/
-│       ├── apps.yaml
-│       └── values/
-│
-├── apps/
-│   ├── base/
-│   │   ├── myapp.yaml
-│   │   └── redis.yaml
-│   ├── dev/
-│   │   └── myapp.yaml
-│   ├── staging/
-│   │   └── myapp.yaml
-│   └── prod/
-│       └── myapp.yaml
-│
-├── charts/
-│   └── myapp/
-│       ├── Chart.yaml
-│       ├── values.yaml
-│       ├── values-dev.yaml
-│       ├── values-staging.yaml
-│       ├── values-prod.yaml
-│       └── templates/
-│
-└── README.md
+tiktuzki-gitops/
+├── docs/            cluster documentation — source of truth, mirrored to the site
+│   └── dev-cluster/
+├── bootstraps/      what you apply by hand once: ArgoCD, SSO
+├── clusters/        per-cluster app-of-apps entry points
+├── apps/            ArgoCD Applications (base + per-env overlays)
+├── charts/          Helm charts owned by this repo
+├── infra/           platform pieces: backup, monitoring, sealed-secrets, storage, limits, rbac
+└── note/            scratch notes, not runbooks
 ```
 
-### Create backup on for LVM disk:
+## Bootstrapping
 
 ```bash
-# resize logical volume to create space for snapshot
-sudo lvreduce -L -5G /dev/ubuntu-vg/ubuntu-lv
-
-sudo lvcreate  --size 5G  --snapshot  --name ubuntu-lv-snap-$(date +%Y%m%d)  /dev/ubuntu-vg/ubuntu-lv
+./startup.sh
 ```
+
+Everything else is pulled by ArgoCD from this repo.
+
+## Conventions
+
+- Secrets are committed **sealed** (`infra/sealed-secrets/`). Nothing in this repo is a
+  plaintext credential — `ACCESS.md` deliberately lists key *names* only.
+- A change to how the cluster behaves and the doc describing it belong in the same commit.
+- `note/` is for scratch. If something in it becomes a procedure someone follows, it graduates
+  to `docs/`.
