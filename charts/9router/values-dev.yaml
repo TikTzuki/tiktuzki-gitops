@@ -5,7 +5,7 @@
 #   1. Sync with `ingress.enabled: false` (as below). The Service stays ClusterIP, so the
 #      only way in is a port-forward.
 #   2. Port-forward, open the dashboard, set the admin password:
-#        kubectl -n demo port-forward svc/9router-9router 20128:20128
+#        kubectl -n demo port-forward svc/nine-router 20128:20128
 #      A fresh volume has requireLogin=true and hasPassword=false — it is unclaimed until
 #      you do this, and anything that can reach it can take it over.
 #   3. Flip `ingress.enabled` to true and let Argo CD sync.

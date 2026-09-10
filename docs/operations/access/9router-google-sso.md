@@ -81,7 +81,7 @@ Reach the dashboard and sign in with the local password first — you need an au
 session to change auth settings, and locking yourself out is the failure mode here.
 
 ```bash
-kubectl -n demo port-forward svc/9router 20128:20128
+kubectl -n demo port-forward svc/nine-router 20128:20128
 ```
 
 In *Settings → Authentication*:

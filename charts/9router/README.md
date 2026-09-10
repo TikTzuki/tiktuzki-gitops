@@ -34,7 +34,7 @@ stored in it. `ingress.enabled` is therefore `false` by default.
 
 ```bash
 # 1. sync with the ingress off (the default), then reach it privately
-kubectl -n demo port-forward svc/9router 20128:20128
+kubectl -n demo port-forward svc/nine-router 20128:20128
 
 # 2. open http://localhost:20128 and set the admin password
 
@@ -91,7 +91,7 @@ So `podSecurityContext` and `securityContext` are deliberately empty: setting
 cannot write its database. The process does not stay root:
 
 ```bash
-kubectl -n demo exec deploy/9router -- id     # uid=1000(node)
+kubectl -n demo exec deploy/nine-router -- id     # uid=1000(node)
 ```
 
 ## Why one replica
@@ -156,16 +156,21 @@ there, give it its own claim rather than widening the data volume.
 | `persistence.mountPath` | `/app/data` | Not `/data` |
 | `ingress.enabled` | `false` | Claim the instance first |
 | `resources.limits.memory` | `768Mi` | Holds buffers per in-flight stream; node1 has no headroom |
+| `fullnameOverride` | `nine-router` | Resources cannot be called `9router`: Service names are DNS-1035 and must start with a letter |
 
 ## Verify
 
 ```bash
 helm lint charts/9router -f charts/9router/values-dev.yaml
-helm template 9router charts/9router -f charts/9router/values-dev.yaml | kubectl apply --dry-run=client -f -
 
-kubectl -n demo exec deploy/9router -- wget -qO- localhost:20128/api/health   # {"ok":true}
-kubectl -n demo exec deploy/9router -- id                                      # uid=1000(node)
-kubectl -n demo get pvc 9router-data
+# --dry-run=SERVER, not client. Client-side dry-run validates schema but not name formats,
+# so it happily accepted a Service called "9router" that the API server rejected: Service
+# names are DNS-1035 labels and must start with a letter. Hence fullnameOverride below.
+helm template 9router charts/9router -f charts/9router/values-dev.yaml | kubectl apply --dry-run=server -f -
+
+kubectl -n demo exec deploy/nine-router -- wget -qO- localhost:20128/api/health   # {"ok":true}
+kubectl -n demo exec deploy/nine-router -- id                                      # uid=1000(node)
+kubectl -n demo get pvc nine-router-data
 ```
 
 `/api/health` is the only endpoint that answers without a session — everything else 401s or

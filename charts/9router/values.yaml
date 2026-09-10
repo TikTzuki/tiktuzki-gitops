@@ -24,7 +24,19 @@ image:
 
 imagePullSecrets: []
 nameOverride: ""
-fullnameOverride: ""
+
+# Resources are named `nine-router`, not `9router`, and this is not cosmetic.
+#
+# Kubernetes Service names must be DNS-1035 labels, which have to START WITH A LETTER.
+# Deployments, PVCs and Ingresses are DNS-1123 and accept a leading digit, so with the
+# chart name alone the Deployment and PVC were created and only the Service was rejected:
+#
+#   Service "9router" is invalid: metadata.name: a DNS-1035 label must ...
+#   start with an alphabetic character
+#
+# Note that `kubectl apply --dry-run=client` does NOT catch this — name-format validation
+# is server-side. Use --dry-run=server when a chart name starts with a digit.
+fullnameOverride: "nine-router"
 
 serviceAccount:
   create: false
