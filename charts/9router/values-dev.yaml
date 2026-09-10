@@ -1,0 +1,72 @@
+# dev overlay for 9router on node1.
+#
+# Deploy order matters here, and it is two steps rather than one:
+#
+#   1. Sync with `ingress.enabled: false` (as below). The Service stays ClusterIP, so the
+#      only way in is a port-forward.
+#   2. Port-forward, open the dashboard, set the admin password:
+#        kubectl -n demo port-forward svc/9router-9router 20128:20128
+#      A fresh volume has requireLogin=true and hasPassword=false — it is unclaimed until
+#      you do this, and anything that can reach it can take it over.
+#   3. Flip `ingress.enabled` to true and let Argo CD sync.
+#
+# Skipping to step 3 publishes an unclaimed admin console that holds provider API keys.
+
+image:
+  tag: "0.5.69"
+
+persistence:
+  enabled: true
+  size: 2Gi
+  # "" resolves to microk8s-hostpath, the cluster default class.
+  storageClass: ""
+
+# Step 3: set to true once the password is set. The host still needs a proxy host in Nginx
+# Proxy Manager pointing at node1 over the NetBird mesh — see
+# docs/operations/cluster/publish-private-server.md.
+ingress:
+  enabled: false
+  # Traefik v3.6, via the MicroK8s `ingress` addon. See cluster-rebuild.md.
+  className: public
+  # Deliberately empty. Streamed completions are long-lived responses and something on the
+  # path will eventually cut one off mid-stream — but the fix is not a k8s annotation:
+  #
+  #   * Traefik does not buffer responses by default, so there is nothing to switch off,
+  #     and it ignores every nginx.ingress.kubernetes.io/* key.
+  #   * The proxy that *does* buffer and time out is Nginx Proxy Manager on the public VPS,
+  #     which is where public traffic terminates. Raise proxy_read_timeout there, in the
+  #     proxy host's Advanced tab — see docs/operations/cluster/publish-private-server.md.
+  #   * If Traefik itself is the one timing out, that is an entrypoint or ServersTransport
+  #     setting, not a per-Ingress annotation.
+  annotations: {}
+  hosts:
+    - host: 9router.tiktuzki.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 256Mi
+  limits:
+    memory: 768Mi
+
+# TLS terminates at Nginx Proxy Manager on the public VPS, so the pod sees plain HTTP.
+# 9Router marks its session cookie Secure when this is "true" OR the request carries
+# X-Forwarded-Proto: https — setting it explicitly means the flag does not silently
+# disappear if a proxy hop drops the header. Required in practice for Google OIDC, since
+# the OAuth flow round-trips the cookie. See docs/operations/access/9router-google-sso.md.
+extraEnvVars:
+  - name: AUTH_COOKIE_SECURE
+    value: "true"
+
+# Uncomment once a SealedSecret named 9router-secret exists, if you use peer/tunnel
+# features. Seal it first — see infra/sealed-secrets/README.md. Never inline the value.
+#
+# The Google OIDC client secret does NOT go here: 9Router stores OIDC config in its own
+# database via the dashboard and reads no OIDC env vars at all.
+# envFrom:
+#   - secretRef:
+#       name: 9router-secret

@@ -1,0 +1,52 @@
+9Router {{ .Chart.AppVersion }} deployed as {{ include "9router.fullname" . }}.
+
+{{- if not .Values.ingress.enabled }}
+
+  ⚠  CLAIM THE INSTANCE BEFORE EXPOSING IT
+
+  A fresh volume reports requireLogin=true but hasPassword=false: login is required and no
+  password exists. Whoever sets one first owns the gateway and every provider credential
+  you put in it. Do this now, over a port-forward, while it is still ClusterIP-only:
+
+    kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "9router.fullname" . }} {{ .Values.service.port }}:{{ .Values.service.port }}
+
+  Then open http://localhost:{{ .Values.service.port }} and set a password.
+
+  Only after that, enable the ingress in values-{{ .Release.Namespace }}.yaml (or
+  values-dev.yaml) and let Argo CD sync it.
+{{- else }}
+
+  Reachable at:
+  {{- range .Values.ingress.hosts }}
+    https://{{ .host }}
+  {{- end }}
+
+  If this is a first deployment onto an empty volume, set the admin password NOW — a
+  brand-new instance has requireLogin=true and hasPassword=false, so it is unclaimed and
+  publicly reachable at the same time.
+{{- end }}
+
+Check it came up:
+
+  kubectl -n {{ .Release.Namespace }} get pod -l app.kubernetes.io/name={{ include "9router.name" . }}
+  kubectl -n {{ .Release.Namespace }} exec deploy/{{ include "9router.fullname" . }} -- wget -qO- localhost:{{ .Values.containerPort }}/api/health
+  # expects {"ok":true}
+
+{{- if .Values.persistence.enabled }}
+
+State lives on PVC {{ include "9router.fullname" . }}-data at {{ .Values.persistence.mountPath }}
+({{ .Values.persistence.size }}). It holds db/ and jwt-secret — provider credentials, routing
+config, and the token signing key. The claim is annotated resource-policy: keep, so
+`helm uninstall` will not delete it. It is hostpath on node1, so it is protected by the
+nightly backup and nothing else.
+{{- else }}
+
+⚠  persistence.enabled is false. Provider credentials and the JWT secret are written to the
+   container filesystem and will be lost on the next restart, logging everyone out and
+   discarding all configuration. Do not run it this way beyond a smoke test.
+{{- end }}
+
+The process starts as root only to chown its data directory, then drops to uid 1000. Confirm:
+
+  kubectl -n {{ .Release.Namespace }} exec deploy/{{ include "9router.fullname" . }} -- id
+  # expects uid=1000(node)

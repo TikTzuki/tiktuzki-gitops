@@ -1,0 +1,15 @@
+apiVersion: v2
+name: 9router
+description: Self-hosted 9Router — an AI coding gateway fronting 40+ model providers for Claude Code, Codex, Cursor and friends
+
+# A single-replica, stateful Deployment. Everything 9Router knows — provider credentials,
+# routing rules, the JWT signing secret — lives in a SQLite-style store under /app/data on a
+# ReadWriteOnce PVC. There is no external database and no coordination between instances, so
+# this chart is deliberately not scalable: see `replicaCount` in values.yaml.
+type: application
+
+# Bump on every chart change.
+version: 0.1.0
+
+# Application version shipped (matches image.tag).
+appVersion: "0.5.69"

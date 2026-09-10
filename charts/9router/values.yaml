@@ -1,0 +1,171 @@
+# Default values for 9router.
+#
+# Defaults are the SAFE ones, not the useful ones: no ingress, ClusterIP only. A fresh
+# 9Router volume reports `requireLogin: true` but `hasPassword: false` — login is demanded
+# and no password exists yet — so the first person to reach a brand-new instance and set one
+# owns the gateway and every provider credential in it. Bring it up closed, claim it, then
+# open it. See the "First run" section of README.md.
+
+# Not scalable, and not a placeholder for "we'll tune this later".
+#
+# All state — provider credentials, routing rules, the JWT signing secret — lives in a local
+# store under /app/data on a ReadWriteOnce volume. There is no external database and no
+# leader election, so two replicas would either fail to schedule (RWO, one node) or race on
+# the same files. Leave this at 1.
+replicaCount: 1
+
+image:
+  repository: decolua/9router
+  # Pin a real tag. The upstream README says `latest`, but the image tag equals the git tag
+  # and releases land every few days — `latest` makes a rollback impossible to describe.
+  # Tags: https://hub.docker.com/r/decolua/9router/tags
+  tag: "0.5.69"
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: false
+  automount: true
+  annotations: {}
+  name: ""
+
+# ─── Networking ──────────────────────────────────────────────────────────────────────────
+#
+# 20128 is not configurable in practice: PORT=20128 is baked into the image and the app
+# binds it via process.env.PORT. Changing this value changes the Service port, not what the
+# container listens on, so change `containerPort` too if you ever need to.
+service:
+  type: ClusterIP
+  port: 20128
+  # Only read when type is NodePort. The cluster convention is that mesh-only services take
+  # a NodePort and get recorded in ACCESS.md; a dashboard does not need one.
+  nodePort: ""
+
+# The port inside the container. Must match PORT in the image (20128).
+containerPort: 20128
+
+# Off by default — see the note at the top of this file. Once a password is set, flip
+# `enabled` in values-<env>.yaml.
+ingress:
+  enabled: false
+  # `public` is the MicroK8s ingress class, which is Traefik v3.6 since 1.35 — not
+  # ingress-nginx. Do not reach for nginx.ingress.kubernetes.io/* annotations: Traefik
+  # ignores them silently, so they look like configuration and do nothing. A couple of
+  # older charts in this repo still carry them as no-ops.
+  className: public
+  annotations: {}
+  hosts: []
+  #  - host: 9router.tiktuzki.com
+  #    paths:
+  #      - path: /
+  #        pathType: Prefix
+  tls: []
+
+# ─── Persistence ─────────────────────────────────────────────────────────────────────────
+#
+# On by default, unlike most charts here, because losing this volume is not a cache miss —
+# it loses every provider credential, all routing config, and the JWT secret (which logs
+# everyone out and invalidates issued tokens).
+#
+# The mount path is /app/data and NOT /data. The upstream Quick Start says
+# `-v 9router-data:/data`, but /data does not exist in the image and the app reads
+# DATA_DIR=/app/data. Following the published command gives you a volume nothing writes to
+# and state that disappears on every restart. Verified against decolua/9router:0.5.69.
+persistence:
+  enabled: true
+  mountPath: /app/data
+  accessMode: ReadWriteOnce
+  # microk8s-hostpath is the cluster default class, so "" resolves to it. Being hostpath,
+  # the data is on node1's disk — it is covered by the nightly backup, not by replication.
+  storageClass: ""
+  size: 2Gi
+
+# ─── Security context ────────────────────────────────────────────────────────────────────
+#
+# Deliberately empty, and this is the one setting not to "harden" without testing.
+#
+# The image entrypoint is:
+#     chown -R node:node /app/data /app/data-home
+#     exec su-exec node "$@"
+#
+# It therefore has to start as root to fix ownership on a freshly provisioned volume, and
+# drops to uid 1000 (node) itself before exec'ing the server. Setting runAsNonRoot: true or
+# runAsUser: 1000 here makes the chown fail on first boot and the app cannot write its
+# database. The process does not stay root — verify with:
+#     kubectl exec deploy/<release>-9router -- id
+podSecurityContext: {}
+securityContext: {}
+
+# ─── Probes ──────────────────────────────────────────────────────────────────────────────
+#
+# /api/health returns {"ok":true} and is the only endpoint that answers without a session —
+# everything else 401s or redirects to /login, so do not point a probe at /.
+livenessProbe:
+  httpGet:
+    path: /api/health
+    port: http
+  initialDelaySeconds: 20
+  periodSeconds: 20
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /api/health
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+# ─── Resources ───────────────────────────────────────────────────────────────────────────
+#
+# A Next.js server proxying streamed completions: modest CPU, but it holds response buffers
+# for every in-flight stream, so memory is the one to watch. node1 has no headroom to spare
+# (see PLAN.md), hence a limit rather than an open bound.
+resources:
+  requests:
+    cpu: 50m
+    memory: 256Mi
+  limits:
+    memory: 768Mi
+
+# ─── Application env ─────────────────────────────────────────────────────────────────────
+#
+# 9Router is configured through its dashboard, not through env vars — provider keys are
+# entered in the UI and stored in the volume. Only these are read from the environment:
+#
+#   AUTH_COOKIE_SECURE              "true" forces the Secure flag on the session cookie;
+#                                   otherwise it is set only when X-Forwarded-Proto is https
+#   KEEP_ALIVE_TIMEOUT              ms; raise if long streamed completions are cut off
+#   NINEROUTER_PEER_TOKEN           shared token for peer/tunnel features
+#   DEBUG_BACKGROUND_TOKEN_REFRESH  verbose logging for provider token refresh
+#
+# OIDC is NOT in this list. 9Router keeps issuer/client-id/client-secret in its own database,
+# entered through the dashboard, so SSO cannot be configured from Git — see
+# docs/operations/access/9router-google-sso.md.
+#
+# Put NINEROUTER_PEER_TOKEN in a SealedSecret and reference it via `envFrom` — never inline
+# here. This repo is public.
+extraEnvVars: []
+#  - name: KEEP_ALIVE_TIMEOUT
+#    value: "120000"
+
+envFrom: []
+#  - secretRef:
+#      name: 9router-secret
+
+# Extra mounts. /app/data-home is chowned by the entrypoint and its purpose is undocumented;
+# it was empty after a clean boot, so it is left ephemeral. If tunnel or Tailscale state
+# turns out to live there, give it its own claim rather than widening the one above.
+volumes: []
+volumeMounts: []
+
+podAnnotations: {}
+podLabels: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}

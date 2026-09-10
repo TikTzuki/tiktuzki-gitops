@@ -20,6 +20,7 @@ or **the site build fails**.
 | [operations/cluster/static-ip-netplan.md](operations/cluster/static-ip-netplan.md)           | Pinning node1's address so MicroK8s API certs and the overlay peer stop breaking on DHCP renewal. |
 | [operations/cluster/cluster-rebuild.md](operations/cluster/cluster-rebuild.md)               | Bare MicroK8s → running cluster, in order. Everything is recoverable except step 5.               |
 | [operations/access/kubectl-credentials.md](operations/access/kubectl-credentials.md)         | Per-person kubectl certs instead of sharing the one `admin` cert.                                 |
+| [operations/access/9router-google-sso.md](operations/access/9router-google-sso.md)           | Google OIDC for the 9Router gateway — and why its consent screen is the only gate.                |
 | [operations/backup-restore/backup-flow.md](operations/backup-restore/backup-flow.md)         | **Setting backup up**: what gets captured, the two storage classes, encryption, and Steps 1–5.    |
 | [operations/services/available-dev-service.md](operations/services/available-dev-service.md) | What is running and how to reach it.                                                              |
 

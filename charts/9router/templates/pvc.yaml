@@ -1,0 +1,19 @@
+{{- if .Values.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "9router.fullname" . }}-data
+  labels:
+    {{- include "9router.labels" . | nindent 4 }}
+  annotations:
+    # Keep the claim if the release is uninstalled. It holds the provider credentials and
+    # the JWT secret; an accidental `helm uninstall` should not be a credential loss event.
+    helm.sh/resource-policy: keep
+spec:
+  accessModes:
+    - {{ .Values.persistence.accessMode | default "ReadWriteOnce" }}
+  storageClassName: {{ .Values.persistence.storageClass | default "" | quote }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.size | default "2Gi" }}
+{{- end }}
