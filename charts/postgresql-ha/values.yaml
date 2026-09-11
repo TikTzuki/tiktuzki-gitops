@@ -430,7 +430,7 @@ rbac:
 # Verify after the first rollout — the postgres processes should NOT be uid 0:
 #   kubectl -n database exec postgresql-ha-0 -- ps -o user,comm -C postgres
 podSecurityContext:
-  fsGroup: 1000
+  fsGroup: 103
 containerSecurityContext: {}
 
 nodeSelector: {}
