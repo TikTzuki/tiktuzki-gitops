@@ -18,11 +18,32 @@ data:
 
     CONN="$1"
 
-    # The password arrives as an env var from the Secret, never as an argument — an argument
-    # would be visible in `ps` to anything else sharing the pod's PID namespace.
-    : "${APP_PASSWORD:?APP_PASSWORD not set - check auth.existingSecret}"
+    # Passwords arrive as FILES, not env vars, and never as arguments (an argument is visible
+    # in `ps` to anything sharing the pod's PID namespace).
+    #
+    # Not a stylistic choice: Patroni invokes this hook as its own child, and Spilo starts
+    # Patroni from runit, whose run script wipes every environment variable it does not
+    # allowlist before exec'ing it. So a password exported in the StatefulSet is already gone
+    # by the time this runs, and the hook fails on the first line with
+    #
+    #   post-init.sh: line 8: APP_PASSWORD: APP_PASSWORD not set
+    #
+    # after initdb has already succeeded — Patroni then drops the initialize key and renames
+    # PGDATA to pgdata.failed. A mounted file is visible to the hook no matter what runit did
+    # to the environment.
+    SECRET_DIR=/etc/patroni/secrets
+
+    read_secret() {
+      if [ ! -r "$SECRET_DIR/$1" ]; then
+        echo "post-init: $SECRET_DIR/$1 not readable - check auth.existingSecret and that the key exists in it" >&2
+        exit 1
+      fi
+      cat "$SECRET_DIR/$1"
+    }
+
+    APP_PASSWORD="$(read_secret {{ .Values.auth.secretKeys.appPasswordKey }})"
     {{- if .Values.bootstrap.cdc.enabled }}
-    : "${DEBEZIUM_PASSWORD:?DEBEZIUM_PASSWORD not set - add auth.secretKeys.debeziumPasswordKey to the Secret}"
+    DEBEZIUM_PASSWORD="$(read_secret {{ .Values.auth.secretKeys.debeziumPasswordKey }})"
     {{- end }}
 
     # One psql session throughout: \connect keeps the host/port/user from CONN, which sidesteps

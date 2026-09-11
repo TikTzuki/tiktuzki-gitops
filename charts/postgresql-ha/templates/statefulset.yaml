@@ -260,20 +260,10 @@ spec:
                 secretKeyRef:
                   name: {{ include "pgha.secretName" . }}
                   key: {{ .Values.auth.secretKeys.replicationPasswordKey }}
-            # Consumed by the post-init hook, which runs as a child of Patroni and inherits
-            # this environment.
-            - name: APP_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "pgha.secretName" . }}
-                  key: {{ .Values.auth.secretKeys.appPasswordKey }}
-            {{- if .Values.bootstrap.cdc.enabled }}
-            - name: DEBEZIUM_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "pgha.secretName" . }}
-                  key: {{ .Values.auth.secretKeys.debeziumPasswordKey }}
-            {{- end }}
+            # NO APP_PASSWORD / DEBEZIUM_PASSWORD here. The post-init hook needs them, but it
+            # runs as a child of Patroni, and runit strips the environment before Patroni
+            # starts — see the PATRONI_* note above. They are mounted as files instead, from
+            # the `secrets` volume at /etc/patroni/secrets.
           # /liveness is 200 whenever the Patroni process itself is healthy — deliberately NOT
           # /readiness, which is 503 on a node that is up but not yet streaming. Using
           # /readiness here would have Kubernetes kill replicas mid-catch-up, forever.
@@ -316,6 +306,11 @@ spec:
               mountPath: {{ .Values.persistence.mountPath }}
             - name: bootstrap
               mountPath: /etc/patroni/scripts
+              readOnly: true
+            # Read by post-init.sh. Files rather than env vars because runit wipes the
+            # environment out from under the Patroni daemon this hook is a child of.
+            - name: secrets
+              mountPath: /etc/patroni/secrets
               readOnly: true
             # Patroni writes .pgpass and assorted scratch files; the rest of the filesystem can
             # stay read-only-ish without them.
@@ -367,6 +362,13 @@ spec:
             # bootstrap fail with "Permission denied" AFTER initdb has already run, which
             # leaves a half-initialised cluster that has to be wiped.
             defaultMode: 0755
+        - name: secrets
+          secret:
+            secretName: {{ include "pgha.secretName" . }}
+            # 0440, not the 0644 default: postgres reads these through the GROUP bit, which
+            # podSecurityContext.fsGroup (103) sets on every file in the volume. Same
+            # mechanism that makes the service account token readable.
+            defaultMode: 0440
         - name: tmp
           emptyDir: {}
   {{- if .Values.persistence.enabled }}
