@@ -18,8 +18,13 @@ image:
 persistence:
   enabled: true
   size: 2Gi
-  # "" resolves to microk8s-hostpath, the cluster default class.
+  # "" = no storage class: bind to the static PV below rather than the default provisioner.
   storageClass: ""
+  local:
+    enabled: true
+    node: node1
+    path: /srv/k8s-volumes/9router
+    reclaimPolicy: Retain
 
 # Step 3: set to true once the password is set. The host still needs a proxy host in Nginx
 # Proxy Manager pointing at node1 over the NetBird mesh — see

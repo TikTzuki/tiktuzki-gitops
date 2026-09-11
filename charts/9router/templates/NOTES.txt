@@ -37,8 +37,23 @@ Check it came up:
 State lives on PVC {{ include "9router.fullname" . }}-data at {{ .Values.persistence.mountPath }}
 ({{ .Values.persistence.size }}). It holds db/ and jwt-secret — provider credentials, routing
 config, and the token signing key. The claim is annotated resource-policy: keep, so
-`helm uninstall` will not delete it. It is hostpath on node1, so it is protected by the
-nightly backup and nothing else.
+`helm uninstall` will not delete it.
+{{- if .Values.persistence.local.enabled }}
+
+Backed by a static PV at {{ .Values.persistence.local.path }} on {{ .Values.persistence.local.node }}.
+If the claim stays Pending, the directory almost certainly does not exist yet — a local PV
+does not create one. On the node:
+
+    sudo ./infra/storage/create-volume-dirs.sh
+
+That path is under /srv/k8s-volumes, which is what backup.sh tars. A PVC on the default
+microk8s-hostpath class would NOT be backed up.
+{{- else }}
+
+⚠  persistence.local.enabled is false and storageClass is "" — the claim will stay Pending
+   forever, because an empty class opts out of the default provisioner and no static PV is
+   being created. Enable local, or set a real storageClass.
+{{- end }}
 {{- else }}
 
 ⚠  persistence.enabled is false. Provider credentials and the JWT secret are written to the

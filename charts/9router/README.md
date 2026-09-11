@@ -73,8 +73,31 @@ After a clean boot `/app/data` contains `db/` and a `0600` `jwt-secret`. Losing 
 all configuration and invalidates every issued token. The PVC carries
 `helm.sh/resource-policy: keep` so `helm uninstall` cannot take the credentials with it.
 
-Being `microk8s-hostpath`, the data sits on node1's disk. It is protected by the nightly
-backup and by nothing else — see [backup-flow](../../docs/operations/backup-restore/backup-flow.md).
+### It must be a local PV, not the default class
+
+The chart ships a static PersistentVolume at `/srv/k8s-volumes/9router` pinned to node1,
+which is the convention for every stateful chart here — see the header of
+[create-volume-dirs.sh](../../infra/storage/create-volume-dirs.sh).
+
+Using the default `microk8s-hostpath` class instead would be wrong twice over:
+
+- **It would not be backed up.** `backup.sh` tars *"the local PV directories under
+  `/srv/k8s-volumes`"*. The default class writes to
+  `/var/snap/microk8s/common/default-storage`, which that tar never visits — so the provider
+  credentials and the JWT secret would have no backup at all. See
+  [backup-flow](../../docs/operations/backup-restore/backup-flow.md).
+- **It is the wrong disk.** `/srv/k8s-volumes` is a dedicated 500 GB LV; the root filesystem
+  is 118 GB and shared with the OS, snap and containerd images.
+
+A local PV does **not** create its directory. Before first sync, on node1:
+
+```bash
+sudo ./infra/storage/create-volume-dirs.sh
+```
+
+That script refuses to run if `/srv/k8s-volumes` is not a mount point — which is the correct
+behaviour, because creating the directories with the LV unmounted would quietly fill the root
+filesystem instead.
 
 ## Why the pod runs as root
 

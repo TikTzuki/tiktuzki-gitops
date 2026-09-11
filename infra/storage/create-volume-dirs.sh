@@ -55,6 +55,10 @@ DIRS=(
   "monitoring/prometheus|1000:2000|prometheus runs 1000:2000"
   "monitoring/grafana|472:472|grafana runs 472:472"
   "tigerbeetle||no securityContext in chart — image default"
+  # 9Router's entrypoint runs `chown -R node:node /app/data` as root before dropping to
+  # uid 1000, so it repairs ownership itself and this entry could be left root-owned.
+  # Setting it anyway means the first boot does no recursive chown over a restored volume.
+  "9router|1000:1000|9router data: provider creds + jwt-secret; self-chowns on start"
 )
 
 for entry in "${DIRS[@]}"; do

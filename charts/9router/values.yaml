@@ -90,10 +90,31 @@ persistence:
   enabled: true
   mountPath: /app/data
   accessMode: ReadWriteOnce
-  # microk8s-hostpath is the cluster default class, so "" resolves to it. Being hostpath,
-  # the data is on node1's disk — it is covered by the nightly backup, not by replication.
+  # Empty string means "no storage class" — it explicitly opts OUT of the default
+  # microk8s-hostpath provisioner and binds to the static PV below instead. Leaving this
+  # empty without `local.enabled` leaves the PVC Pending forever, waiting for a PV nobody
+  # creates.
   storageClass: ""
   size: 2Gi
+
+  # A static PV on the dedicated data LV, which is the convention in this repo — see the
+  # header of infra/storage/create-volume-dirs.sh. Two reasons it is not optional here:
+  #
+  #   1. BACKUP. backup.sh tars "the local PV directories under /srv/k8s-volumes". The
+  #      default microk8s-hostpath class writes to
+  #      /var/snap/microk8s/common/default-storage, which that tar never visits — so a
+  #      hostpath PVC holding provider credentials and the JWT secret would be backed up by
+  #      nothing at all.
+  #   2. CAPACITY. /srv/k8s-volumes is a 500G LV (ubuntu-vg/k8s-data). The root filesystem
+  #      is 118G and shared with the OS, snap and containerd images.
+  #
+  # The directory must exist before the pod starts: a local PV does not create it. Add the
+  # path to infra/storage/create-volume-dirs.sh and run that script on node1.
+  local:
+    enabled: true
+    node: node1
+    path: /srv/k8s-volumes/9router
+    reclaimPolicy: Retain
 
 # ─── Security context ────────────────────────────────────────────────────────────────────
 #

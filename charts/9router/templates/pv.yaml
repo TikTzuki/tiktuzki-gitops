@@ -1,0 +1,30 @@
+{{- if and .Values.persistence.enabled .Values.persistence.local.enabled }}
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: {{ include "9router.fullname" . }}-data-pv
+  labels:
+    {{- include "9router.labels" . | nindent 4 }}
+spec:
+  capacity:
+    storage: {{ .Values.persistence.size | default "2Gi" }}
+  accessModes:
+    - {{ .Values.persistence.accessMode | default "ReadWriteOnce" }}
+  # Retain, not Delete. The directory holds the provider credentials and the JWT secret; a
+  # deleted PVC should leave the data on disk for someone to look at, not reclaim it.
+  persistentVolumeReclaimPolicy: {{ .Values.persistence.local.reclaimPolicy | default "Retain" }}
+  # Quoted, so this is the empty STRING rather than YAML null. Both bind against a PVC
+  # asking for storageClassName: "", but keeping the two literally identical avoids the
+  # usual null-vs-empty-string confusion when someone debugs a Pending claim.
+  storageClassName: {{ .Values.persistence.storageClass | default "" | quote }}
+  local:
+    path: {{ .Values.persistence.local.path }}
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - {{ .Values.persistence.local.node }}
+{{- end }}
