@@ -30,7 +30,10 @@ persistence:
 # Proxy Manager pointing at node1 over the NetBird mesh — see
 # docs/operations/cluster/publish-private-server.md.
 ingress:
-  enabled: false
+  # Enabled 2026-09-11, after the instance was claimed (hasPassword: true) and Google OIDC
+  # was configured (oidcConfigured: true, authMode: both). Those are the prerequisites —
+  # see the first-run note in README.md and docs/operations/access/9router-google-sso.md.
+  enabled: true
   # Traefik v3.6, via the MicroK8s `ingress` addon. See cluster-rebuild.md.
   className: public
   # Deliberately empty. Streamed completions are long-lived responses and something on the
