@@ -1,0 +1,120 @@
+# Development values for postgresql-ha (microk8s, single node `node1`).
+
+replicaCount: 3
+
+auth:
+  existingSecret: "postgresql-ha-secret"
+
+bootstrap:
+  database: app
+  username: app
+  # Creates the debezium / cdc_reader roles and the publication during post_init.
+  #
+  # ⚠️ Only takes effect on a FRESH bootstrap — post_init runs once, ever. Enabled here to be
+  # picked up by the PG18 wipe-and-re-bootstrap; on an already-running cluster it does nothing.
+  # Requires the debezium-password key in postgresql-ha-secret, or every pod CrashLoops on the
+  # missing secretKeyRef.
+  cdc:
+    enabled: true
+  # One schema per service, mirroring the compose stack's schema-per-service layout. Add to
+  # this list BEFORE the first install — post_init runs once and never again.
+  schemas: []
+
+patroni:
+  # Back to upstream defaults. 20/5/5 was set to make failover visibly faster, but it leaves
+  # only 5s of margin over `ttl >= loop_wait + 2*retry_timeout` (15s). Anything that stalls
+  # Patroni's loop then expires the leader lease and triggers a promotion — which is exactly
+  # what happened when Patroni and Debezium fought over an undeclared slot: "Loop time
+  # exceeded", lease lost, 6 promotions an hour.
+  ttl: 30
+  loopWait: 10
+  retryTimeout: 10
+
+  # Permanent logical slot for the fnb CDC connector. MUST match Debezium's `slot.name`.
+  # Without this Patroni drops it as an unknown slot on every loop.
+  slots:
+    fnb_cdc_slot:
+      type: logical
+      database: fnb
+      plugin: pgoutput
+  parameters:
+    # Carried over from the single-node chart's values-dev.yaml — Debezium/CDC needs these.
+    wal_level: "logical"
+    max_replication_slots: "20"
+    max_wal_senders: "20"
+    max_connections: "300"
+    hot_standby: "on"
+    wal_log_hints: "on"
+    # Required for logical-slot failover. Patroni refuses to sync logical slots without it and
+    # logs "Logical slot failover requires hot_standby_feedback" on every loop. Costs some
+    # vacuum aggressiveness on the primary — the price of durable slots.
+    hot_standby_feedback: "on"
+    # PG17 native slot sync: copies logical slots to replicas so a promotion does not orphan
+    # them and the consumer resumes instead of re-snapshotting.
+    sync_replication_slots: "on"
+    # ⚠️ -1 (the default) means unlimited: a slot whose consumer stops pins WAL forever and
+    # fills the 20Gi volume, which takes the whole cluster read-only. Bounded, Postgres
+    # invalidates the slot instead — a re-snapshot is recoverable, a full volume is an outage.
+    max_slot_wal_keep_size: "4GB"
+
+persistence:
+  enabled: true
+  size: 20Gi
+  useLocalVolume: true
+  # Create these on node1 before installing, one per replica:
+  #   sudo mkdir -p /srv/k8s-volumes/postgresql-ha/{0,1,2}
+  #   sudo chown -R 1000:1000 /srv/k8s-volumes/postgresql-ha
+  localPath: /srv/k8s-volumes/postgresql-ha
+  storageClass: postgresql-ha-local
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - node1
+
+# 3 × (500m / 1Gi) requests on top of what node1 already runs (~1.9 CPU / 3.5Gi of 16 CPU /
+# 15Gi). Comfortable on requests; the limits are what to watch if more services land here.
+# Sized from measurement: 24h peak working set was 149-176Mi per node.
+#
+# ⚠️ 1Gi, NOT 256Mi, despite that peak — the databases are currently EMPTY, so the measurement
+# is an idle one and not representative. Once there is data, shared_buffers and real query
+# concurrency (max_connections: 300) push this up substantially. Sizing from idle numbers is
+# exactly how Grafana got OOMKilled at a 255Mi peak against a 256Mi limit.
+#
+# Re-measure under real load before cutting further:
+#   max by (pod) (max_over_time(container_memory_working_set_bytes{
+#     namespace="database",container="postgresql"}[7d]))
+resources:
+  requests:
+    cpu: 250m
+    memory: 384Mi
+  limits:
+    cpu: "1"
+    memory: 1Gi
+
+# Soft — see values.yaml. There is only one node, so a hard rule would leave two pods Pending.
+podAntiAffinity:
+  enabled: true
+  type: soft
+
+pgdog:
+  enabled: true
+  # include_primary maximises throughput but allows stale reads across transactions. Switch to
+  # prefer_primary before pointing anything transactional at this.
+  extraDatabases:
+    - fnb
+    - ewallet
+    - checkin
+  readWriteSplit: include_primary
+  defaultPoolSize: 25
+
+haproxy:
+  enabled: true
+
+# postgres_exporter sidecar — replication slots, WAL retention, table sizes. Without it there
+# are NO Postgres-internal metrics at all: Patroni exposes cluster topology only.
+metrics:
+  enabled: true

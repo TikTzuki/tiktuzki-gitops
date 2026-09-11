@@ -23,15 +23,26 @@
 apiVersion: traefik.io/v1alpha1
 kind: IngressRouteTCP
 metadata:
-  name: timescaledb
+  name: postgresql-ha
   namespace: database
 spec:
+  # The `postgres` entryPoint (hostPort 5432) previously pointed at the single-node
+  # `timescaledb` chart, which is not deployed. It now serves postgresql-ha's HAProxy
+  # primary, so `psql -h node1 -p 5432` reaches whichever node Patroni has elected leader.
+  #
+  # HAProxy, not pgdog: 5432 is the port people reach for with psql, pg_dump, migrations and
+  # logical-decoding clients, and a transaction-mode pooler cannot serve the last of those.
+  # Applications wanting pooling and the read/write split use pgdog on 6432 instead.
+  #
+  # ⚠️ One entryPoint serves exactly one backend (HostSNI(`*`) is the only valid match on a
+  # plaintext port). Reviving the single-node timescaledb chart means giving it a different
+  # port and entryPoint, not sharing this one.
   entryPoints: [ postgres ]
   routes:
     - match: HostSNI(`*`)
       services:
-        - name: timescaledb
-          port: 5432
+        - name: postgresql-ha-haproxy
+          port: 5000
 ---
 # Raw TCP to whichever node is currently the Patroni leader — no pooler in the path.
 # The one endpoint Debezium must use: logical decoding speaks the streaming-replication

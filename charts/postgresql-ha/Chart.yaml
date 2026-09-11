@@ -1,0 +1,43 @@
+apiVersion: v2
+name: postgresql-ha
+description: PostgreSQL HA — Spilo/Patroni cluster behind pgdog (pooling + read/write split) and HAProxy (leader-pinned TCP)
+
+# The plain-Postgres sibling of charts/timescaledb-ha. Same topology, same operational
+# contract, same correctness rules about which endpoint to connect to — the difference is the
+# image and how Patroni is configured:
+#
+#   timescaledb-ha   timescale/timescaledb-ha    entrypoint IS `patroni <file>`
+#                                                -> config arrives as a patroni.yaml ConfigMap
+#   postgresql-ha    ghcr.io/zalando/spilo-18    entrypoint is `/bin/sh /launch.sh init`
+#                                                -> config arrives as SPILO_CONFIGURATION env
+#
+# Spilo is what the original docker-compose.postgres-ha.yml in payment-platform-backend ran;
+# the timescale image replaced it there. This chart is that path restored, without TimescaleDB.
+#
+# Three nodes under Patroni (automatic leader election and promotion), fronted by two proxies
+# with two different jobs:
+#
+#   pgdog   :6432  — transaction pooling + read/write split. What applications connect to.
+#   HAProxy :5000  — raw TCP to whichever node is currently leader. For clients a
+#           :5001    transaction-mode pooler CANNOT serve: logical decoding (Debezium),
+#                    pg_basebackup, and anything speaking the streaming-replication protocol.
+#
+# Patroni elects and promotes. pgdog only FOLLOWS — it polls pg_is_in_recovery() on each node
+# and re-points writes. HAProxy follows by health-checking Patroni's REST /primary. Neither
+# proxy ever calls pg_promote().
+type: application
+
+# Bump on every chart change.
+version: 0.1.0
+
+# PostgreSQL major shipped by the image tag. 18 is both the current stable series and the
+# newest Spilo publishes — there is no spilo-19.
+appVersion: "18"
+
+keywords:
+  - postgresql
+  - patroni
+  - spilo
+  - high-availability
+  - pgdog
+  - haproxy

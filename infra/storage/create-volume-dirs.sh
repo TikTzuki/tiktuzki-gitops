@@ -51,6 +51,11 @@ DIRS=(
   "timescaledb-ha/0|1000:1000|Patroni member 0"
   "timescaledb-ha/1|1000:1000|Patroni member 1"
   "timescaledb-ha/2|1000:1000|Patroni member 2"
+  # postgresql-ha: Spilo starts as root and chowns PGDATA itself, so ownership here is
+  # belt-and-braces rather than load-bearing (unlike the timescale members above).
+  "postgresql-ha/0|1000:1000|Spilo/Patroni member 0"
+  "postgresql-ha/1|1000:1000|Spilo/Patroni member 1"
+  "postgresql-ha/2|1000:1000|Spilo/Patroni member 2"
   "kafka|1000:1000|broker log segments"
   "monitoring/prometheus|1000:2000|prometheus runs 1000:2000"
   "monitoring/grafana|472:472|grafana runs 472:472"
@@ -79,6 +84,9 @@ done
 # still declare PVs at /srv/k8s-volumes/{timescaledb,postgres}, so they would otherwise start
 # against a directory that does not exist.
 chmod 700 "$ROOT"/timescaledb-ha/? 2>/dev/null || true
+# postgresql-ha mounts PGROOT, not PGDATA — Spilo creates $PGROOT/pgdata itself with 0700, so
+# the mount root does not need it. Harmless to tighten anyway.
+chmod 700 "$ROOT"/postgresql-ha/? 2>/dev/null || true
 
 echo
 echo "==> $ROOT"

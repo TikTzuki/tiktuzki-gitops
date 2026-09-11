@@ -1,0 +1,91 @@
+{{- if .Values.haproxy.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "pgha.haproxy.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "pgha.haproxy.labels" . | nindent 4 }}
+data:
+  haproxy.cfg: |
+    # TCP passthrough to whichever node is currently the Patroni leader.
+    #
+    # Exists because some clients CANNOT go through pgdog. The canonical one is Debezium:
+    # logical decoding uses the streaming-replication protocol (`replication=database` on the
+    # startup packet), which a transaction-mode pooler does not proxy. HAProxy in `mode tcp`
+    # forwards bytes untouched, so the replication protocol survives.
+    #
+    # Routing is decided by Patroni's REST API, not by HAProxy guessing:
+    #   GET /primary  -> 200 only on the leader, 503 on replicas
+    #   GET /replica  -> 200 only on a streaming replica
+    # The moment Patroni promotes a new leader the health check flips and HAProxy follows.
+
+    global
+        maxconn {{ .Values.haproxy.maxconn }}
+        # Log to stdout so `kubectl logs` works; the container has no syslog socket.
+        log stdout format raw local0 info
+
+    # ⚠️ Without this section HAProxy resolves each `server` hostname ONCE, at config parse
+    # time, and caches the IP for the life of the process. Pod IPs change on every recreate, so
+    # after any StatefulSet roll HAProxy health-checks addresses that no longer exist and marks
+    # every backend DOWN with "Layer4 timeout" — while DNS resolves correctly and Patroni
+    # answers 200 from inside the very same pod. Both :5433 and :5434 then serve nothing.
+    resolvers kube-dns
+        # Reads the pod's own /etc/resolv.conf rather than hardcoding the cluster DNS IP.
+        parse-resolv-conf
+        resolve_retries 3
+        timeout resolve 1s
+        timeout retry 1s
+        # Re-resolve often: a pod recreate should be picked up in seconds.
+        hold valid 10s
+        hold other 10s
+        hold refused 10s
+        hold nx 10s
+        hold timeout 10s
+
+    defaults
+        mode               tcp
+        log                global
+        retries            2
+        timeout connect    4s
+        timeout client     {{ .Values.haproxy.timeoutClient }}
+        timeout server     {{ .Values.haproxy.timeoutServer }}
+        timeout check      3s
+
+    # ── Primary-only — Debezium, migrations, and anything that must write ────────────
+    listen primary
+        bind *:{{ .Values.haproxy.primaryPort }}
+        option httpchk GET /primary
+        http-check expect status 200
+        # on-marked-down shutdown-sessions: when a node stops being primary, kill its existing
+        # connections immediately instead of leaving Debezium attached to a demoted node. This
+        # is the one behaviour a plain Kubernetes Service cannot provide — removing a pod from
+        # Endpoints does not touch ESTABLISHED sockets.
+        default-server inter 3s fall 3 rise 2 on-marked-down shutdown-sessions resolvers kube-dns resolve-prefer ipv4 init-addr last,libc,none
+        {{- range $i := until (int .Values.replicaCount) }}
+        server {{ include "pgha.fullname" $ }}-{{ $i }} {{ include "pgha.fullname" $ }}-{{ $i }}.{{ include "pgha.headlessServiceName" $ }}.{{ $.Release.Namespace }}.svc.cluster.local:5432 maxconn 100 check port {{ $.Values.service.restApiPort }}
+        {{- end }}
+
+    # ── Replica-only — read-only consumers that want to bypass pgdog ─────────────────
+    listen replicas
+        bind *:{{ .Values.haproxy.replicaPort }}
+        option httpchk GET /replica
+        http-check expect status 200
+        balance roundrobin
+        default-server inter 3s fall 3 rise 2 on-marked-down shutdown-sessions resolvers kube-dns resolve-prefer ipv4 init-addr last,libc,none
+        {{- range $i := until (int .Values.replicaCount) }}
+        server {{ include "pgha.fullname" $ }}-{{ $i }} {{ include "pgha.fullname" $ }}-{{ $i }}.{{ include "pgha.headlessServiceName" $ }}.{{ $.Release.Namespace }}.svc.cluster.local:5432 maxconn 100 check port {{ $.Values.service.restApiPort }}
+        {{- end }}
+
+    # ── Stats UI — shows live which backend is UP for each listener ──────────────────
+    listen stats
+        mode http
+        bind *:{{ .Values.haproxy.statsPort }}
+        stats enable
+        stats uri /
+        stats refresh 5s
+        # HAProxy 2.0+ has a native Prometheus exporter — no sidecar needed. Scrape
+        # :{{ .Values.haproxy.statsPort }}/metrics for haproxy_backend_active_servers{proxy="primary"},
+        # which is the "can a writer still reach a live node" signal.
+        http-request use-service prometheus-exporter if { path /metrics }
+{{- end }}

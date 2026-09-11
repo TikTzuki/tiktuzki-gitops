@@ -1,0 +1,25 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: postgresql-ha
+  namespace: devops
+spec:
+  destination:
+    namespace: database
+    server: https://kubernetes.default.svc
+  project: default
+  source:
+    # HTTPS, not git@ — Argo CD has no repository credentials registered, and this repo is
+    # public so anonymous HTTPS needs none. See apps/dev/9router.yaml.
+    repoURL: https://github.com/TikTzuki/tiktuzki-gitops.git
+    targetRevision: main
+    path: charts/postgresql-ha
+    helm:
+      valueFiles:
+        - values-dev.yaml
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

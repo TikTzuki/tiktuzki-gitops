@@ -1,0 +1,360 @@
+{{- $fullname := include "pgha.fullname" . -}}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $fullname }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "pgha.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ include "pgha.headlessServiceName" . }}
+  replicas: {{ .Values.replicaCount }}
+  # Parallel, NOT the OrderedReady default. Ordered startup deadlocks a Patroni cluster on any
+  # full restart: pod-0 will not go Ready until it joins a cluster that has a leader, and the
+  # node that would win the election is pod-1 or pod-2, which OrderedReady refuses to start
+  # until pod-0 is Ready. Patroni does its own ordering through the leader lock.
+  podManagementPolicy: Parallel
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      {{- include "pgha.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "pgha.selectorLabels" . | nindent 8 }}
+      annotations:
+        # Restart the pods when the Spilo config or bootstrap hook changes. Note this only
+        # re-reads the generated patroni.yaml — parameters already copied into the DCS at
+        # bootstrap are unaffected (see README "Changing postgresql.conf after bootstrap").
+        checksum/spilo-config: {{ include "pgha.spiloConfiguration" . | sha256sum }}
+        checksum/bootstrap: {{ include (print $.Template.BasePath "/bootstrap-configmap.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "pgha.serviceAccountName" . }}
+      # Postgres needs to finish its shutdown checkpoint. The 30s default SIGKILLs mid-flush,
+      # which turns every rolling update into a crash recovery on the next start.
+      terminationGracePeriodSeconds: 120
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.podAntiAffinity.enabled }}
+      affinity:
+        podAntiAffinity:
+          {{- if eq .Values.podAntiAffinity.type "hard" }}
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  {{- include "pgha.selectorLabels" . | nindent 18 }}
+          {{- else }}
+          # Soft on purpose: a hard rule on a single-node cluster leaves replicas 1 and 2
+          # Pending forever. Flip to `hard` the moment there is a second node — until then
+          # "3 replicas" buys process-level failover, not node-loss survival.
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    {{- include "pgha.selectorLabels" . | nindent 20 }}
+          {{- end }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      initContainers:
+        # ⚠️ Load-bearing. podSecurityContext.fsGroup makes kubelet re-apply group permissions
+        # to the volume on EVERY pod start, leaving PGDATA as 0770. Postgres accepts only 0700
+        # or 0750 and refuses to start:
+        #
+        #   FATAL: data directory "/var/lib/postgresql/data/pgdata" has invalid permissions
+        #   DETAIL: Permissions should be u=rwx (0700) or u=rwx,g=rx (0750).
+        #
+        # Patroni does not crash on this — it retries forever, so the pod stays Running with 0
+        # restarts and only `patronictl list` shows "start failed". It follows whichever pod
+        # restarted most recently, so the broken node appears to move around the cluster, and
+        # each occurrence triggers a promotion. Observed: timeline 13 -> 30 in ~20 minutes.
+        #
+        # Runs after kubelet's fsGroup pass and before Postgres, so it always corrects. No root
+        # needed: the directory is owned by this UID, and an owner may chmod its own directory.
+        - name: fix-pgdata-perms
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - sh
+            - -c
+            # -d guard: on a first bootstrap PGDATA does not exist yet (initdb creates it with
+            # the right mode), so this must not fail there.
+            - 'if [ -d "{{ .Values.dataDir }}" ]; then chmod 0700 "{{ .Values.dataDir }}"; fi'
+          {{- with .Values.containerSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 32Mi
+          volumeMounts:
+            - name: data
+              mountPath: {{ .Values.persistence.mountPath }}
+      containers:
+        - name: postgresql
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          # NO command override, unlike the timescaledb-ha chart.
+          #
+          # That chart points `command` at its own patroni.yaml because the timescale image's
+          # entrypoint is already `patroni <file>`. Spilo's is not: it is
+          # `/bin/sh /launch.sh init`, which creates PGDATA with the right mode, lays down
+          # certificates, generates patroni.yaml from the environment, and only then execs
+          # Patroni. Replacing it with a bare `patroni` call skips all of that and the cluster
+          # fails to bootstrap. Configure Spilo through SPILO_CONFIGURATION instead.
+          ports:
+            - name: postgresql
+              containerPort: 5432
+            - name: patroni
+              containerPort: {{ .Values.service.restApiPort }}
+          env:
+            # Declared first: Kubernetes only expands $(VAR) against variables defined EARLIER
+            # in this list, and the connect addresses below depend on POD_NAME.
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            # PATRONI_* env vars OVERRIDE patroni.yaml. Everything per-pod lives here; only
+            # cluster-wide settings live in the ConfigMap.
+            - name: PATRONI_NAME
+              value: "$(POD_NAME)"
+            - name: PATRONI_SCOPE
+              value: {{ .Values.scope | quote }}
+            - name: PATRONI_KUBERNETES_NAMESPACE
+              value: "$(POD_NAMESPACE)"
+            # Not needed by the Patroni process itself (patroni.yaml already carries this), but
+            # patronictl WITHOUT -c builds its DCS config purely from PATRONI_* env vars. It
+            # sees PATRONI_KUBERNETES_NAMESPACE, infers the Kubernetes DCS, then dies on the
+            # missing labels key:
+            #
+            #   File ".../patroni/dcs/kubernetes.py", line 755, in __init__
+            #     self._labels = deepcopy(config['labels'])
+            #   KeyError: 'labels'
+            #
+            # Setting it here makes plain `patronictl list` / `edit-config` work, which matters
+            # because edit-config is the ONLY way to change DCS-managed settings on a running
+            # cluster. Must match kubernetes.labels in patroni.yaml.
+            - name: PATRONI_KUBERNETES_LABELS
+              value: '{cluster-name: {{ .Values.scope }}}'
+            - name: PATRONI_KUBERNETES_SCOPE_LABEL
+              value: cluster-name
+            - name: PATRONI_KUBERNETES_POD_IP
+              value: "$(POD_IP)"
+            # Stable pod DNS, not the pod IP: this is the address replicas put in
+            # primary_conninfo and the address the REST healthchecks resolve. A pod IP would
+            # be stale the first time a pod is rescheduled.
+            - name: PATRONI_RESTAPI_CONNECT_ADDRESS
+              value: "$(POD_NAME).{{ include "pgha.headlessServiceName" . }}.$(POD_NAMESPACE).svc.cluster.local:{{ .Values.service.restApiPort }}"
+            - name: PATRONI_RESTAPI_LISTEN
+              value: "0.0.0.0:{{ .Values.service.restApiPort }}"
+            - name: PATRONI_POSTGRESQL_CONNECT_ADDRESS
+              value: "$(POD_NAME).{{ include "pgha.headlessServiceName" . }}.$(POD_NAMESPACE).svc.cluster.local:5432"
+            - name: PATRONI_POSTGRESQL_LISTEN
+              value: "0.0.0.0:5432"
+            # ─── Spilo's own contract ──────────────────────────────────────────────
+            # launch.sh reads these BEFORE it generates patroni.yaml. The PATRONI_* vars
+            # further down still win afterwards (Patroni reads its own environment last),
+            # which is why per-pod addresses stay where they are.
+            - name: SCOPE
+              value: {{ .Values.scope | quote }}
+            # PGDATA lands at $PGROOT/pgdata, so PGROOT must be on the volume or the database
+            # is written to the container filesystem and lost on every restart.
+            - name: PGROOT
+              value: {{ .Values.persistence.mountPath | quote }}
+            # Use the Kubernetes API as the DCS. Without this Spilo looks for etcd and the
+            # pod restarts until it finds one.
+            - name: DCS_ENABLE_KUBERNETES_API
+              value: "true"
+            # Must match the cluster-name label the StatefulSet stamps on every pod
+            # (pgha.selectorLabels), or Patroni cannot find its peers.
+            - name: KUBERNETES_SCOPE_LABEL
+              value: "cluster-name"
+            - name: KUBERNETES_ROLE_LABEL
+              value: "role"
+            - name: KUBERNETES_LABELS
+              value: '{"cluster-name": "{{ .Values.scope }}"}'
+            # Spilo names the password vars differently from Patroni. Both are set: these
+            # seed the roles launch.sh creates, the PATRONI_* pair below authenticate the
+            # running cluster.
+            - name: PGPASSWORD_SUPERUSER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "pgha.secretName" . }}
+                  key: {{ .Values.auth.secretKeys.superuserPasswordKey }}
+            - name: PGPASSWORD_STANDBY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "pgha.secretName" . }}
+                  key: {{ .Values.auth.secretKeys.replicationPasswordKey }}
+            # Everything that was patroni.yaml in the sibling chart. launch.sh deep-merges
+            # this into the config it generates.
+            - name: SPILO_CONFIGURATION
+              value: |
+                {{- include "pgha.spiloConfiguration" . | nindent 16 }}
+            - name: PATRONI_POSTGRESQL_DATA_DIR
+              value: {{ .Values.dataDir | quote }}
+            - name: PATRONI_POSTGRESQL_PGPASS
+              value: /tmp/pgpass
+            - name: PATRONI_SUPERUSER_USERNAME
+              value: {{ .Values.auth.superuserUsername | quote }}
+            - name: PATRONI_SUPERUSER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "pgha.secretName" . }}
+                  key: {{ .Values.auth.secretKeys.superuserPasswordKey }}
+            - name: PATRONI_REPLICATION_USERNAME
+              value: {{ .Values.auth.replicationUsername | quote }}
+            - name: PATRONI_REPLICATION_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "pgha.secretName" . }}
+                  key: {{ .Values.auth.secretKeys.replicationPasswordKey }}
+            # Consumed by the post-init hook, which runs as a child of Patroni and inherits
+            # this environment.
+            - name: APP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "pgha.secretName" . }}
+                  key: {{ .Values.auth.secretKeys.appPasswordKey }}
+            {{- if .Values.bootstrap.cdc.enabled }}
+            - name: DEBEZIUM_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "pgha.secretName" . }}
+                  key: {{ .Values.auth.secretKeys.debeziumPasswordKey }}
+            {{- end }}
+          # /liveness is 200 whenever the Patroni process itself is healthy — deliberately NOT
+          # /readiness, which is 503 on a node that is up but not yet streaming. Using
+          # /readiness here would have Kubernetes kill replicas mid-catch-up, forever.
+          livenessProbe:
+            httpGet:
+              path: /liveness
+              port: patroni
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          # /readiness is 200 only on the leader or a streaming replica, which is exactly the
+          # condition for "safe to send queries to".
+          readinessProbe:
+            httpGet:
+              path: /readiness
+              port: patroni
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          # Generous: a first bootstrap has to initdb, and a re-joining replica may need a full
+          # pg_basebackup clone before it answers anything.
+          startupProbe:
+            httpGet:
+              path: /liveness
+              port: patroni
+            periodSeconds: 10
+            failureThreshold: 60
+          {{- with .Values.containerSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: data
+              mountPath: {{ .Values.persistence.mountPath }}
+            - name: bootstrap
+              mountPath: /etc/patroni/scripts
+              readOnly: true
+            # Patroni writes .pgpass and assorted scratch files; the rest of the filesystem can
+            # stay read-only-ish without them.
+            - name: tmp
+              mountPath: /tmp
+{{- if .Values.metrics.enabled }}
+        - name: postgres-exporter
+          image: "{{ .Values.metrics.image.repository }}:{{ .Values.metrics.image.tag }}"
+          imagePullPolicy: {{ .Values.metrics.image.pullPolicy }}
+          ports:
+            - name: metrics
+              containerPort: {{ .Values.metrics.port }}
+          env:
+            # localhost, deliberately: this exporter reports on THIS pod only. Any pooled or
+            # load-balanced address would attribute the series to the wrong node.
+            - name: DATA_SOURCE_URI
+              value: "localhost:5432/{{ .Values.bootstrap.database }}?sslmode=disable"
+            - name: DATA_SOURCE_USER
+              value: {{ .Values.bootstrap.username | quote }}
+            # Separate USER/PASS vars rather than a DATA_SOURCE_NAME URI, so the password never
+            # appears in a connection string visible via `ps` or the container spec.
+            - name: DATA_SOURCE_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "pgha.secretName" . }}
+                  key: {{ .Values.auth.secretKeys.appPasswordKey }}
+            - name: PG_EXPORTER_AUTO_DISCOVER_DATABASES
+              value: {{ .Values.metrics.autoDiscoverDatabases | quote }}
+          livenessProbe:
+            httpGet:
+              path: /
+              port: metrics
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          {{- with .Values.metrics.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.containerSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+{{- end }}
+      volumes:
+        - name: bootstrap
+          configMap:
+            name: {{ $fullname }}-bootstrap
+            # 0755: Patroni execs post-init.sh directly. A ConfigMap's 0644 default makes the
+            # bootstrap fail with "Permission denied" AFTER initdb has already run, which
+            # leaves a half-initialised cluster that has to be wiped.
+            defaultMode: 0755
+        - name: tmp
+          emptyDir: {}
+  {{- if .Values.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          {{- range .Values.persistence.accessModes }}
+          - {{ . | quote }}
+          {{- end }}
+        {{- if .Values.persistence.storageClass }}
+        storageClassName: {{ .Values.persistence.storageClass | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.persistence.size }}
+  {{- end }}
