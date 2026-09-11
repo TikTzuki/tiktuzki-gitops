@@ -66,6 +66,8 @@ resources:
 extraEnvVars:
   - name: AUTH_COOKIE_SECURE
     value: "true"
+  - name: INITIAL_PASSWORD
+    value: "123456"
 
 # Uncomment once a SealedSecret named 9router-secret exists, if you use peer/tunnel
 # features. Seal it first — see infra/sealed-secrets/README.md. Never inline the value.
