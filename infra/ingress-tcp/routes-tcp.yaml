@@ -48,50 +48,58 @@ spec:
 # The one endpoint Debezium must use: logical decoding speaks the streaming-replication
 # protocol, which a transaction-mode pooler does not proxy. Also correct for
 # pg_basebackup and migrations that must not be multiplexed onto a shared backend.
+#
+# Backend is the `postgresql-ha-primary` Service, which selects on `role: master` — the
+# label Patroni rewrites on its own pod at every promotion — so this follows a failover
+# without HAProxy in the path. Deliberately NOT postgresql-ha-haproxy:5000: that is what
+# the `postgres` entryPoint (5432) already serves, and pointing both ports at the same
+# backend would make 5433 a second name for 5432 rather than a shorter path.
+#
+# ⚠️ The cost of skipping HAProxy: during a failover there is a window where NO pod carries
+# `role: master`, and this port refuses connections until Patroni relabels the new leader.
+# HAProxy on 5432 rides that window out. Clients that cannot retry belong on 5432.
+#
+# Replaces timescaledb-ha-primary. That chart is not deployed — no Argo Application and no
+# Services — so this entryPoint was bound to a backend that does not resolve. Reviving
+# timescaledb-ha means giving it its own entryPoint and hostPort in apps/base/traefik.yaml,
+# not sharing this one.
 apiVersion: traefik.io/v1alpha1
 kind: IngressRouteTCP
 metadata:
-  name: timescaledb-ha-primary
+  name: postgresql-ha-primary
   namespace: database
 spec:
   entryPoints: [ pg-primary ]
   routes:
     - match: HostSNI(`*`)
       services:
-        - name: timescaledb-ha-haproxy
-          port: 5000
----
-# Replicas only, round-robin. Read-only by construction.
-apiVersion: traefik.io/v1alpha1
-kind: IngressRouteTCP
-metadata:
-  name: timescaledb-ha-replica
-  namespace: database
-spec:
-  entryPoints: [ pg-replica ]
-  routes:
-    - match: HostSNI(`*`)
-      services:
-        - name: timescaledb-ha-haproxy
-          port: 5001
+        - name: postgresql-ha-primary
+          port: 5432
 ---
 # What applications should use: pooling + read/write split, writes always landing on the
 # current leader.
 #
 # ⚠️ Reads may be STALE — replication is asynchronous, and a read in a separate
 # transaction right after a write can hit a replica that has not replayed it. Reads
-# inside the writing transaction are safe. See charts/timescaledb-ha/README.md.
+# inside the writing transaction are safe. See charts/postgresql-ha/README.md.
+#
+# ⚠️ Transaction-mode pooling, so anything whose state must outlive a transaction does not
+# belong here: logical decoding, LISTEN/NOTIFY, session advisory locks, temp tables,
+# WITH HOLD cursors. Those take 5433 (direct to leader) or 5432 (via HAProxy).
+#
+# Replaces timescaledb-ha-pgdog, whose backend Service does not exist — see the note on
+# postgresql-ha-primary above.
 apiVersion: traefik.io/v1alpha1
 kind: IngressRouteTCP
 metadata:
-  name: timescaledb-ha-pgdog
+  name: postgresql-ha-pgdog
   namespace: database
 spec:
   entryPoints: [ pgdog ]
   routes:
     - match: HostSNI(`*`)
       services:
-        - name: timescaledb-ha-pgdog
+        - name: postgresql-ha-pgdog
           port: 6432
 ---
 apiVersion: traefik.io/v1alpha1
