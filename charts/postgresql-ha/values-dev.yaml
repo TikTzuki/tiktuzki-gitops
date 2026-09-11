@@ -63,7 +63,7 @@ persistence:
   useLocalVolume: true
   # Create these on node1 before installing, one per replica:
   #   sudo mkdir -p /srv/k8s-volumes/postgresql-ha/{0,1,2}
-  #   sudo chown -R 1000:1000 /srv/k8s-volumes/postgresql-ha
+  #   sudo chown -R 101:103 /srv/k8s-volumes/postgresql-ha
   localPath: /srv/k8s-volumes/postgresql-ha
   storageClass: postgresql-ha-local
   nodeAffinity:

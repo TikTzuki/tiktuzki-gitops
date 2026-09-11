@@ -5,10 +5,11 @@ dynamically provision the StatefulSet's volumeClaimTemplates. One static local P
 closes that gap: the claims bind by storageClassName + size + accessMode, and the ordinal in
 each path keeps two nodes from ever sharing a data directory.
 
-The directories must already exist on the node, owned by the image's postgres UID:
+The directories must already exist on the node, owned by the image's postgres UID —
+101:103 for Spilo, NOT the 1000:1000 that timescaledb-ha uses:
 
     sudo mkdir -p {{ .Values.persistence.localPath }}/{0..{{ sub (int .Values.replicaCount) 1 }}}
-    sudo chown -R 1000:1000 {{ .Values.persistence.localPath }}
+    sudo chown -R 101:103 {{ .Values.persistence.localPath }}
 
 `local` rather than `hostPath` on purpose: local PVs honour nodeAffinity, so the scheduler
 knows the volume pins the pod to node1 instead of discovering it after a failed mount.

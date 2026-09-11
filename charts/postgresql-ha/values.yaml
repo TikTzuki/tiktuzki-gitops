@@ -178,9 +178,11 @@ patroni:
 #
 # The directories must EXIST ON THE NODE before install, one per replica:
 #     sudo mkdir -p /srv/k8s-volumes/postgresql-ha/{0,1,2}
-#     sudo chown -R 1000:1000 /srv/k8s-volumes/postgresql-ha
-# UID 1000 is `postgres` inside the Spilo image; without the chown the pods
-# CrashLoop on "could not create directory ... Permission denied".
+#     sudo chown -R 101:103 /srv/k8s-volumes/postgresql-ha
+# 101:103 is `postgres` inside the Spilo image — NOT 1000:1000, which is the timescaledb-ha
+# image's postgres and is what this said until it was caught. Verify against the tag in use:
+#     docker run --rm --entrypoint id ghcr.io/zalando/spilo-18:4.1-p2 postgres
+# Without the chown the pods CrashLoop on "could not create directory ... Permission denied".
 persistence:
   enabled: true
   size: 20Gi
@@ -426,6 +428,20 @@ rbac:
 #
 # So the container starts as root and de-escalates itself, which is Spilo's documented
 # contract rather than an oversight here. fsGroup still applies to the mounted volume.
+#
+# ⚠️ fsGroup MUST be 103, Spilo's postgres gid, and this is not cosmetic. kubelet applies
+# fsGroup to EVERY volume in the pod, the projected service account token included, which it
+# leaves as `-rw-r----- 1 root <fsGroup>` — no world-read bit. Patroni runs as postgres
+# (101:103) once launch.sh drops root, so at fsGroup 1000 it is neither the owner nor in the
+# group, and it dies before it ever reaches the API:
+#
+#   File ".../patroni/dcs/kubernetes.py", line 99, in _read_token_file
+#   PermissionError: [Errno 13] Permission denied:
+#     '/var/run/secrets/kubernetes.io/serviceaccount/token'
+#
+# runit retries that 5 times, then stops the service for good — so the pod sits Running at
+# 1/2 Ready with a low restart count rather than CrashLooping where you would look for it.
+# 103 is also what Zalando's own operator uses (spilo_fsgroup: 103).
 #
 # Verify after the first rollout — the postgres processes should NOT be uid 0:
 #   kubectl -n database exec postgresql-ha-0 -- ps -o user,comm -C postgres

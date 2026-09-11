@@ -138,8 +138,22 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: status.podIP
-            # PATRONI_* env vars OVERRIDE patroni.yaml. Everything per-pod lives here; only
-            # cluster-wide settings live in the ConfigMap.
+            # ⚠️ PATRONI_* env vars DO NOT reach the Patroni daemon under Spilo, unlike a
+            # plain `patroni <file>` entrypoint. Spilo starts Patroni from runit, and
+            # /etc/service/patroni/run wipes the environment first — deliberately, so a
+            # password cannot leak into the process — keeping only:
+            #
+            #   KUBERNETES_(SERVICE|PORT|ROLE)*, POD_IP, POD_NAMESPACE, HOSTNAME, PATH,
+            #   PGHOME, LC_ALL, ENABLE_PG_MON
+            #
+            # Everything the DAEMON must see therefore has to go through SPILO_CONFIGURATION
+            # (deep-merged into /run/postgres.yml before the wipe) or through a variable
+            # launch.sh itself consumes (PGROOT, PGDATA, SCOPE, PGPASSWORD_*).
+            #
+            # These are still worth setting: `patronictl` invoked over `kubectl exec` is a
+            # separate process that DOES inherit the container environment, and builds its DCS
+            # config from exactly these. Verify what the daemon actually got with
+            #   kubectl -n database exec postgresql-ha-0 -- grep data_dir /run/postgres.yml
             - name: PATRONI_NAME
               value: "$(POD_NAME)"
             - name: PATRONI_SCOPE
@@ -181,10 +195,23 @@ spec:
             # which is why per-pod addresses stay where they are.
             - name: SCOPE
               value: {{ .Values.scope | quote }}
-            # PGDATA lands at $PGROOT/pgdata, so PGROOT must be on the volume or the database
-            # is written to the container filesystem and lost on every restart.
+            # PGROOT is what launch.sh chowns to postgres, so it must be the mounted volume.
             - name: PGROOT
               value: {{ .Values.persistence.mountPath | quote }}
+            # ⚠️ PGDATA must be set EXPLICITLY. The Spilo image bakes
+            # `ENV PGDATA=/home/postgres/pgdata/pgroot/data` and configure_spilo.py copies that
+            # value straight into the generated postgres.yml — it does NOT derive it from
+            # PGROOT. Set PGROOT alone and the cluster initdbs onto the container filesystem
+            # (lost on every restart) while the PV sits empty, and Patroni dies first anyway,
+            # because launch.sh only chowns PGROOT and leaves the real PGDATA root-owned 0700:
+            #
+            #   File ".../patroni/utils.py", line 1075, in data_directory_is_empty
+            #   PermissionError: [Errno 13] Permission denied:
+            #     '/home/postgres/pgdata/pgroot/data'
+            #
+            # Keep this equal to dataDir — fix-pgdata-perms chmods that same path.
+            - name: PGDATA
+              value: {{ .Values.dataDir | quote }}
             # Use the Kubernetes API as the DCS. Without this Spilo looks for etcd and the
             # pod restarts until it finds one.
             - name: DCS_ENABLE_KUBERNETES_API

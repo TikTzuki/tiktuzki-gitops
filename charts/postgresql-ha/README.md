@@ -9,13 +9,13 @@ same rules about which endpoint to connect to.
 
 Only two things, and both follow from the image:
 
-| | timescaledb-ha | postgresql-ha |
-|---|---|---|
-| Image | `timescale/timescaledb-ha` | `ghcr.io/zalando/spilo-18` |
-| Entrypoint | `patroni /etc/timescaledb/patroni.yaml` | `/bin/sh /launch.sh init` |
-| Patroni config | a `patroni.yaml` ConfigMap | `SPILO_CONFIGURATION` env, from the `pgha.spiloConfiguration` helper |
-| Runs as | `runAsUser: 1000`, `runAsNonRoot: true` | **root**, then de-escalates itself |
-| Extensions | `timescaledb` at bootstrap | `bootstrap.extensions`, empty by default |
+|                | timescaledb-ha                          | postgresql-ha                                                        |
+|----------------|-----------------------------------------|----------------------------------------------------------------------|
+| Image          | `timescale/timescaledb-ha`              | `ghcr.io/zalando/spilo-18`                                           |
+| Entrypoint     | `patroni /etc/timescaledb/patroni.yaml` | `/bin/sh /launch.sh init`                                            |
+| Patroni config | a `patroni.yaml` ConfigMap              | `SPILO_CONFIGURATION` env, from the `pgha.spiloConfiguration` helper |
+| Runs as        | `runAsUser: 1000`, `runAsNonRoot: true` | **root**, then de-escalates to `postgres` (101:103)                  |
+| Extensions     | `timescaledb` at bootstrap              | `bootstrap.extensions`, empty by default                             |
 
 Spilo is what the original `docker-compose.postgres-ha.yml` ran before the timescale image
 replaced it. `launch.sh` creates PGDATA, writes certificates, generates `patroni.yaml` from
@@ -91,11 +91,11 @@ pooler does not proxy.
 ## Install
 
 **1. Create the data directories on the node** (one per replica, owned by the image's
-postgres UID):
+postgres UID — `101:103` for Spilo, *not* the `1000:1000` that timescaledb-ha uses):
 
 ```bash
 sudo mkdir -p /srv/k8s-volumes/postgresql-ha/{0,1,2}
-sudo chown -R 1000:1000 /srv/k8s-volumes/postgresql-ha
+sudo chown -R 101:103 /srv/k8s-volumes/postgresql-ha
 ```
 
 Skip this and the pods CrashLoop on `could not create directory ... Permission denied`.
