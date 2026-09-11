@@ -30,29 +30,15 @@ persistence:
 # Proxy Manager pointing at node1 over the NetBird mesh — see
 # docs/operations/cluster/publish-private-server.md.
 ingress:
-  # Enabled 2026-09-11, after the instance was claimed (hasPassword: true) and Google OIDC
-  # was configured (oidcConfigured: true, authMode: both). Those are the prerequisites —
-  # see the first-run note in README.md and docs/operations/access/9router-google-sso.md.
   enabled: true
-  # Traefik v3.6, via the MicroK8s `ingress` addon. See cluster-rebuild.md.
   className: public
-  # Deliberately empty. Streamed completions are long-lived responses and something on the
-  # path will eventually cut one off mid-stream — but the fix is not a k8s annotation:
-  #
-  #   * Traefik does not buffer responses by default, so there is nothing to switch off,
-  #     and it ignores every nginx.ingress.kubernetes.io/* key.
-  #   * The proxy that *does* buffer and time out is Nginx Proxy Manager on the public VPS,
-  #     which is where public traffic terminates. Raise proxy_read_timeout there, in the
-  #     proxy host's Advanced tab — see docs/operations/cluster/publish-private-server.md.
-  #   * If Traefik itself is the one timing out, that is an entrypoint or ServersTransport
-  #     setting, not a per-Ingress annotation.
-  annotations: {}
+  annotations: { }
   hosts:
     - host: 9router.tiktuzki.com
       paths:
         - path: /
           pathType: Prefix
-  tls: []
+  tls: [ ]
 
 resources:
   requests:

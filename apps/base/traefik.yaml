@@ -146,14 +146,33 @@ spec:
         # is self-signed and unverifiable by construction.
         additionalArguments:
           - "--serversTransport.insecureSkipVerify=true"
+          # What Traefik stamps into every Ingress's status.loadBalancer. Set STATICALLY to
+          # the node address, because the alternative — providers.kubernetesIngress
+          # .publishedService, below — reads status.loadBalancer off the `ingress/traefik`
+          # Service, and that Service is deliberately ClusterIP (see `service:`), which never
+          # gets one. With publishedService on and no cloud LB, every Ingress in the cluster
+          # keeps `ADDRESS` empty forever and Argo holds it at Progressing indefinitely:
+          #
+          #   $ kubectl -n demo get ingress nine-router
+          #   NAME          CLASS    HOSTS                  ADDRESS   PORTS
+          #   nine-router   public   9router.tiktuzki.com             80
+          #
+          # Routing is unaffected either way — this is only what gets reported back. Ingress
+          # reaches the node through hostPort 80/443, so the node IP is the true address.
+          # Update this if node1 is ever renumbered or a second node joins.
+          - "--providers.kubernetesingress.ingressendpoint.ip=192.168.1.5"
 
         # ─── providers ────────────────────────────────────────────────────────────
         providers:
           kubernetesIngress:
             enabled: true
             allowEmptyServices: true
+            # OFF: it would point ingressendpoint at the ClusterIP Service, which has no
+            # status.loadBalancer to copy. The static ingressendpoint.ip in
+            # additionalArguments does this job instead. Turn this back on only if the
+            # Service ever becomes a real LoadBalancer (MetalLB or a cloud provider).
             publishedService:
-              enabled: true
+              enabled: false
           kubernetesCRD:
             enabled: true          # required for IngressRouteTCP
           kubernetesGateway:
