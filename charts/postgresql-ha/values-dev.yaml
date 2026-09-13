@@ -32,11 +32,12 @@ patroni:
 
   # Permanent logical slot for the fnb CDC connector. MUST match Debezium's `slot.name`.
   # Without this Patroni drops it as an unknown slot on every loop.
-  slots:
-    fnb_cdc_slot:
-      type: logical
-      database: fnb
-      plugin: pgoutput
+  #  slots:
+  #    fnb_cdc_slot:
+  #      type: logical
+  #      database: fnb
+  #      plugin: pgoutput
+  slots: [ ]
   parameters:
     # Carried over from the single-node chart's values-dev.yaml — Debezium/CDC needs these.
     wal_level: "logical"
@@ -102,12 +103,18 @@ podAntiAffinity:
 
 pgdog:
   enabled: true
+  # Empty on purpose. pgdog opens a pool per (database x node) for EVERY name listed here, and
+  # a name Postgres does not have is not inert — each backend refuses the connection and every
+  # node logs a FATAL several times a second, drowning its own log:
+  #
+  #   FATAL:  database "fnb" does not exist
+  #
+  # fnb / ewallet / checkin were listed here but never existed. post_init runs ONCE, at first
+  # bootstrap, and creates only bootstrap.database (app) — adding a name here does not create
+  # anything. Re-add one only AFTER the database exists in Postgres.
+  extraDatabases: [ ]
   # include_primary maximises throughput but allows stale reads across transactions. Switch to
   # prefer_primary before pointing anything transactional at this.
-  extraDatabases:
-    - fnb
-    - ewallet
-    - checkin
   readWriteSplit: include_primary
   defaultPoolSize: 25
 
