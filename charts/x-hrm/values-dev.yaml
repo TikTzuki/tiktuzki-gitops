@@ -36,7 +36,7 @@ app:
   metabase:
     siteUrl: https://bi.tiktuzki.com
     dashboards:
-      recruiting: 0    # TODO: set to the id provision.py prints
+      recruiting: 3    # TODO: set to the id provision.py prints
   # Uncomment to route Claude calls through the in-cluster gateway instead of the public API.
   # anthropicBaseUrl: http://nine-router.demo:20128
 
