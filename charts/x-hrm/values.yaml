@@ -36,6 +36,7 @@ secret:
   migrateDbUrlKey: migrate-db-url  # optional — separate URL for Alembic (e.g. an owner role)
   secretKeyKey: secret-key       # required when env=production — signs session JWTs
   anthropicApiKeyKey: anthropic-api-key  # optional — only for AI_PROVIDER=anthropic
+  metabaseSecretKeyKey: metabase-secret-key  # optional — Metabase's embedding secret key
 
 # ─── Application settings (non-secret) ───────────────────────────────────────────────────
 app:
@@ -57,6 +58,11 @@ app:
   anthropicModel: ""
   # Empty = api.anthropic.com. Point at a gateway (e.g. the in-cluster 9router) here.
   anthropicBaseUrl: ""
+  # Embedded Metabase dashboards (x-hrm page /analytics). siteUrl empty = the page is hidden.
+  # dashboards: x-hrm key → Metabase dashboard id, printed by tools/metabase/provision.py.
+  metabase:
+    siteUrl: ""
+    dashboards: { }
 
 # Run `alembic upgrade head` as an initContainer before the app starts. Safe because there is
 # exactly one pod and strategy is Recreate — two migrators never run at once.

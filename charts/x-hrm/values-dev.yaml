@@ -31,6 +31,12 @@ app:
   allowedEmailDomain: newera.inc
   rootUserEmail: long.tpt@newera.inc
   aiProvider: anthropic
+  # Signing key: `metabase-secret-key` in x-hrm-secret (= embedding-secret-key of
+  # demo/metabase-secret). Dashboard id: printed by tools/metabase/provision.py in the x-hrm repo.
+  metabase:
+    siteUrl: https://bi.tiktuzki.com
+    dashboards:
+      recruiting: 0    # TODO: set to the id provision.py prints
   # Uncomment to route Claude calls through the in-cluster gateway instead of the public API.
   # anthropicBaseUrl: http://nine-router.demo:20128
 

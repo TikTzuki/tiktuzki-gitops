@@ -90,6 +90,22 @@ disagree about which database they talk to.
 - name: CORS_ORIGINS
   value: {{ . | quote }}
 {{- end }}
+{{- with .Values.app.metabase }}
+{{- if .siteUrl }}
+# Embedded Metabase dashboards (/analytics). The signing key is Metabase's "embedding secret
+# key" — the same value as `embedding-secret-key` in demo/metabase-secret.
+- name: METABASE_SITE_URL
+  value: {{ .siteUrl | quote }}
+- name: METABASE_DASHBOARDS
+  value: {{ .dashboards | toJson | quote }}
+- name: METABASE_SECRET_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "x-hrm.secretName" $ }}
+      key: {{ $.Values.secret.metabaseSecretKeyKey }}
+      optional: true
+{{- end }}
+{{- end }}
 # Inside the volume mounted at /data — anywhere else is not writable by uid 10001 and is
 # lost on restart.
 - name: UPLOAD_DIR

@@ -13,7 +13,7 @@ description: New Era HRM — recruiting (CV hub + TA weekly report + dashboard) 
 type: application
 
 # Bump on every chart change.
-version: 0.1.0
+version: 0.2.0
 
 # Application version shipped (matches image.tag once tags are pinned).
 appVersion: "0.1.0"
