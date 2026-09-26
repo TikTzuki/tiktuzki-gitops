@@ -1,0 +1,136 @@
+# Default values for metabase.
+#
+# Defaults are the SAFE ones: no ingress, nothing that points at a real database. Everything
+# environment-specific goes in values-<env>.yaml.
+
+image:
+  repository: metabase/metabase
+  # Pin a release. `latest` would run Liquibase migrations for whatever version happened to be
+  # pulled, and a Metabase downgrade is not supported once they have run.
+  tag: "v0.63.18.2"
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: [ ]
+nameOverride: ""
+fullnameOverride: ""
+
+# ─── Application database ────────────────────────────────────────────────────────────────
+#
+# Where Metabase keeps ITS OWN state (users, questions, dashboards, saved connections) — not
+# the data it charts. Never the built-in H2 file: it lives inside the container and is lost on
+# restart. Point at a plain Postgres endpoint, NOT a transaction-mode pooler (pgdog): Liquibase
+# takes session-level locks while migrating.
+database:
+  host: ""
+  port: 5432
+  name: metabase
+  user: ""
+
+# ─── Secret ──────────────────────────────────────────────────────────────────────────────
+#
+# Create it as a SealedSecret (templates/sealedsecret.yaml) — see README.md.
+secret:
+  name: ""                                      # default: <fullname>-secret
+  dbPasswordKey: db-password                    # required — application database password
+  # required — encrypts the connection details (passwords) Metabase stores for the databases
+  # it charts. Set it BEFORE the first start and never change it: rotating or losing it makes
+  # every saved connection unreadable.
+  encryptionSecretKeyKey: encryption-secret-key
+  # required — signs session keys in the application database. Changing it logs everyone out.
+  sessionSecretKeyKey: session-secret-key
+  # optional — the key x-hrm signs static-embed JWTs with. Same value in x-hrm's Secret.
+  embeddingSecretKeyKey: embedding-secret-key
+
+# ─── Metabase settings (non-secret) ──────────────────────────────────────────────────────
+app:
+  # Public URL — used in links, e-mails and the embed URLs Metabase hands out.
+  siteUrl: ""
+  # Default time zone for reports; matters for "this week" / "this quarter" filters.
+  reportTimezone: Asia/Ho_Chi_Minh
+  # Static (signed) embedding — the open-source way to put a dashboard inside x-hrm.
+  enableStaticEmbedding: true
+  # Google sign-in (open-source edition supports it). Leave empty to use e-mail + password.
+  # The OAuth client must list siteUrl under "Authorized JavaScript origins".
+  googleClientId: ""
+  # With googleClientId set: anyone signing in with this domain gets an account automatically.
+  # Leave empty to only let in people an admin has invited.
+  googleAutoCreateDomain: ""
+  # No phoning home from inside the cluster.
+  anonTracking: false
+  checkForUpdates: false
+  # Heap as a share of the container memory limit (JVM default is 25%, too small here).
+  javaOpts: "-XX:MaxRAMPercentage=75"
+
+# Additional environment variables, verbatim (any MB_* setting — see the Metabase docs).
+extraEnv: [ ]
+
+service:
+  type: ClusterIP
+  port: 3000
+
+ingress:
+  enabled: false
+  className: public
+  annotations: { }
+  hosts:
+    - host: chart-example.local
+      paths:
+        - path: /
+          pathType: Prefix
+  # TLS terminates upstream at NPM in this cluster, so this stays empty.
+  tls: [ ]
+
+# The image starts as root and drops to a `metabase` user it creates at runtime; started as a
+# fixed non-root uid it runs java directly instead (checked: v0.63.18.2 starts cleanly as
+# 2000:2000 on a read-only root filesystem with /tmp and /plugins writable).
+podSecurityContext:
+  runAsUser: 2000
+  runAsGroup: 2000
+  runAsNonRoot: true
+  fsGroup: 2000
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ "ALL" ]
+
+# A JVM: memory is the thing to size. No CPU limit — house rule, see
+# infra/limits/limitranges.yaml (CFS throttling). Startup is CPU-heavy (JIT + migrations).
+resources:
+  requests:
+    cpu: 250m
+    memory: 1Gi
+  limits:
+    memory: 2Gi
+
+# /api/health answers 503 until migrations and initialization are done — the first start on
+# an empty database takes a minute or two, an upgrade can take longer. Hence a generous
+# startup budget (10 min) and a patient liveness probe after that.
+startupProbe:
+  httpGet:
+    path: /api/health
+    port: http
+  periodSeconds: 10
+  failureThreshold: 60
+livenessProbe:
+  httpGet:
+    path: /api/health
+    port: http
+  periodSeconds: 20
+  timeoutSeconds: 5
+  failureThreshold: 6
+readinessProbe:
+  httpGet:
+    path: /api/health
+    port: http
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+terminationGracePeriodSeconds: 30
+
+podAnnotations: { }
+podLabels: { }
+nodeSelector: { }
+tolerations: [ ]
+affinity: { }

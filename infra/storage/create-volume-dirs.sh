@@ -51,11 +51,9 @@ DIRS=(
   "timescaledb-ha/0|1000:1000|Patroni member 0"
   "timescaledb-ha/1|1000:1000|Patroni member 1"
   "timescaledb-ha/2|1000:1000|Patroni member 2"
-  # postgresql-ha: Spilo starts as root and chowns PGDATA itself, so ownership here is
-  # belt-and-braces rather than load-bearing (unlike the timescale members above).
-  "postgresql-ha/0|1000:1000|Spilo/Patroni member 0"
-  "postgresql-ha/1|1000:1000|Spilo/Patroni member 1"
-  "postgresql-ha/2|1000:1000|Spilo/Patroni member 2"
+  "postgresql-ha/0|101:103|Spilo/Patroni member 0"
+  "postgresql-ha/1|101:103|Spilo/Patroni member 1"
+  "postgresql-ha/2|101:103|Spilo/Patroni member 2"
   "kafka|1000:1000|broker log segments"
   "monitoring/prometheus|1000:2000|prometheus runs 1000:2000"
   "monitoring/grafana|472:472|grafana runs 472:472"

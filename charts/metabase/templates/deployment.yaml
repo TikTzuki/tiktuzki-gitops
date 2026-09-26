@@ -1,0 +1,153 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "metabase.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    # Env vars from a Secret are read once at container start. Requires the opt-in Reloader
+    # (apps/base/reloader.yaml).
+    reloader.stakater.com/auto: "true"
+  labels:
+    {{- include "metabase.labels" . | nindent 4 }}
+spec:
+  # One, and never an old and a new version at once — see Chart.yaml. Not a value on purpose.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "metabase.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "metabase.labels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      # Metabase never talks to the Kubernetes API.
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: metabase
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+          env:
+            - name: MB_DB_TYPE
+              value: postgres
+            - name: MB_DB_HOST
+              value: {{ required "database.host is required — never run Metabase on its in-container H2 file" .Values.database.host | quote }}
+            - name: MB_DB_PORT
+              value: {{ .Values.database.port | quote }}
+            - name: MB_DB_DBNAME
+              value: {{ .Values.database.name | quote }}
+            - name: MB_DB_USER
+              value: {{ required "database.user is required" .Values.database.user | quote }}
+            - name: MB_DB_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "metabase.secretName" . }}
+                  key: {{ .Values.secret.dbPasswordKey }}
+            - name: MB_ENCRYPTION_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "metabase.secretName" . }}
+                  key: {{ .Values.secret.encryptionSecretKeyKey }}
+            - name: MB_SESSION_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "metabase.secretName" . }}
+                  key: {{ .Values.secret.sessionSecretKeyKey }}
+            - name: MB_EMBEDDING_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "metabase.secretName" . }}
+                  key: {{ .Values.secret.embeddingSecretKeyKey }}
+                  optional: true
+            {{- with .Values.app.siteUrl }}
+            - name: MB_SITE_URL
+              value: {{ . | quote }}
+            {{- end }}
+            - name: MB_REPORT_TIMEZONE
+              value: {{ .Values.app.reportTimezone | quote }}
+            - name: JAVA_TIMEZONE
+              value: {{ .Values.app.reportTimezone | quote }}
+            - name: MB_ENABLE_EMBEDDING_STATIC
+              value: {{ .Values.app.enableStaticEmbedding | quote }}
+            {{- with .Values.app.googleClientId }}
+            - name: MB_GOOGLE_AUTH_CLIENT_ID
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.app.googleAutoCreateDomain }}
+            - name: MB_GOOGLE_AUTH_AUTO_CREATE_ACCOUNTS_DOMAIN
+              value: {{ . | quote }}
+            {{- end }}
+            - name: MB_ANON_TRACKING_ENABLED
+              value: {{ .Values.app.anonTracking | quote }}
+            - name: MB_CHECK_FOR_UPDATES
+              value: {{ .Values.app.checkForUpdates | quote }}
+            - name: JAVA_OPTS
+              value: {{ .Values.app.javaOpts | quote }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.startupProbe }}
+          startupProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          # The root filesystem is read-only; these are the only places Metabase writes.
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: plugins
+              mountPath: /plugins
+      volumes:
+        - name: tmp
+          emptyDir: { }
+        # Third-party drivers go here. Empty = only the built-in ones (Postgres included).
+        - name: plugins
+          emptyDir: { }
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

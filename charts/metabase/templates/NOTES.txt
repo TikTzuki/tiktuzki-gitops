@@ -1,0 +1,13 @@
+Metabase {{ .Chart.AppVersion }} → {{ include "metabase.fullname" . }} in {{ .Release.Namespace }}
+{{- if .Values.ingress.enabled }}
+{{- range .Values.ingress.hosts }}
+  https://{{ .host }}
+{{- end }}
+{{- else }}
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "metabase.fullname" . }} 3000:{{ .Values.service.port }}
+  → http://localhost:3000 (finish the setup wizard here BEFORE enabling the ingress)
+{{- end }}
+
+Needs Secret {{ include "metabase.secretName" . }} (keys: {{ .Values.secret.dbPasswordKey }}, {{ .Values.secret.encryptionSecretKeyKey }}, {{ .Values.secret.sessionSecretKeyKey }}; optional {{ .Values.secret.embeddingSecretKeyKey }}) — see charts/metabase/README.md.
+Application database: {{ .Values.database.name }} on {{ .Values.database.host }}:{{ .Values.database.port }} as {{ .Values.database.user }}.
+First start runs migrations (1–2 min): kubectl -n {{ .Release.Namespace }} logs deploy/{{ include "metabase.fullname" . }} -f

@@ -1,0 +1,16 @@
+apiVersion: v2
+name: metabase
+description: Metabase (open-source edition) — self-service BI and signed dashboard embeds for x-hrm
+
+# All of Metabase's own state (users, questions, dashboards, saved connections) lives in its
+# application database on postgresql-ha — the pod itself is stateless, so there is no volume.
+#
+# 1 replica, strategy Recreate: a version upgrade runs Liquibase migrations on the application
+# database at start, and an old and a new version must never run against it at once.
+type: application
+
+# Bump on every chart change.
+version: 0.1.0
+
+# Metabase release shipped (matches image.tag).
+appVersion: "v0.63.18.2"

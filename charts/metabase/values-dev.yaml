@@ -1,0 +1,46 @@
+# Metabase — dev cluster (node1), namespace `demo`, next to x-hrm.
+
+image:
+  repository: metabase/metabase
+  tag: "v0.63.18.2"
+
+# ─── Application database ────────────────────────────────────────────────────────────────
+#
+# postgresql-ha, its own database `metabase` owned by `app` — Metabase's own tables would
+# otherwise sit next to other apps' in the shared `app` database.
+#
+# ⚠️ HAProxy's primary port :5000, NOT pgdog — Liquibase takes session-level locks while
+# migrating, which a transaction-mode pooler breaks. :5000 follows the leader on failover.
+database:
+  host: postgresql-ha-haproxy.database
+  port: 5000
+  name: metabase
+  user: app
+
+secret:
+  name: metabase-secret
+
+app:
+  siteUrl: https://bi.tiktuzki.com
+  reportTimezone: Asia/Ho_Chi_Minh
+  enableStaticEmbedding: true
+  # Fill in once an OAuth client exists for bi.tiktuzki.com (see README.md, step 6).
+  googleClientId: ""
+  googleAutoCreateDomain: ""
+
+service:
+  type: ClusterIP
+  port: 3000
+
+# ⚠️ OFF until the first admin exists. Until someone finishes Metabase's setup wizard, whoever
+# opens the URL first becomes its admin. Do the setup over port-forward (README.md, step 4),
+# then flip this to true. TLS terminates at NPM: proxy host bi.tiktuzki.com → node1:80.
+ingress:
+  enabled: false
+  className: public
+  hosts:
+    - host: bi.tiktuzki.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: [ ]

@@ -49,6 +49,7 @@ Reached over HTTPS through the public proxy — no VPN needed.
 | Grafana             | `https://grafana.tiktuzki.com`    |
 | Keycloak            | `https://keycloak.tiktuzki.com`   |
 | New Era HRM         | `https://hrm.tiktuzki.com`        |
+| Metabase (BI)       | `https://bi.tiktuzki.com`         |
 
 Argo CD, Grafana and kafka-ui authenticate through Keycloak — see
 [Keycloak SSO](../access/keycloak-sso).

@@ -193,7 +193,10 @@ silently stops following failovers.
 
 Other web UIs on the same ingress: `argocd.tiktuzki.com`, `cv-hub.tiktuzki.com`,
 `my-pwd.tiktuzki.com`, `hrm.tiktuzki.com` (x-hrm — secret `demo/x-hrm-secret`: `database-url`,
-`secret-key`, `anthropic-api-key`).
+`secret-key`, `anthropic-api-key`), `bi.tiktuzki.com` (Metabase — secret `demo/metabase-secret`:
+`db-password`, `encryption-secret-key` ⚠️ never rotate, `session-secret-key`,
+`embedding-secret-key` shared with x-hrm; admin account in Metabase itself, see
+`charts/metabase/README.md`).
 
 ## argocd
 
