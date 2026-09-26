@@ -24,8 +24,7 @@ app:
   siteUrl: https://bi.tiktuzki.com
   reportTimezone: Asia/Ho_Chi_Minh
   enableStaticEmbedding: true
-  # Fill in once an OAuth client exists for bi.tiktuzki.com (see README.md, step 6).
-  googleClientId: ""
+  googleClientId: "596742570337-asvjj8n18ejkha8l23julahful47jnpi.apps.googleusercontent.com"
   googleAutoCreateDomain: ""
 
 service:
