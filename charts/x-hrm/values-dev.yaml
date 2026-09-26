@@ -1,0 +1,59 @@
+# x-hrm — dev cluster (node1), namespace `demo`.
+
+image:
+  repository: tiktuzki/x-hrm
+  pullPolicy: Always
+  # TODO: pin to a build sha once CI publishes the image (like charts/checkin). Built on a Mac,
+  # push with --platform linux/amd64 — node1 is amd64.
+  tag: "latest"
+
+# ─── Database ────────────────────────────────────────────────────────────────────────────
+#
+# postgresql-ha (plain Postgres 18), its own database `hrm` owned by `app`.
+#
+# ⚠️ HAProxy's primary port :5000, NOT pgdog — the same deliberate deviation as neo-flagd:
+# Alembic runs DDL and takes session-level locks, which a transaction-mode pooler breaks, and
+# psycopg uses server-side prepared statements. :5000 follows the leader on failover.
+#
+# The URL itself is in the Secret (key `database-url`):
+#   postgresql+psycopg://app:<url-encoded app-password>@postgresql-ha-haproxy.database:5000/hrm
+database:
+  host: postgresql-ha-haproxy.database:5000
+  name: hrm
+
+secret:
+  name: x-hrm-secret
+
+app:
+  env: production
+  # OAuth client "x-hrm" — Authorized JavaScript origins must include https://hrm.tiktuzki.com
+  googleClientId: 596742570337-asvjj8n18ejkha8l23julahful47jnpi.apps.googleusercontent.com
+  allowedEmailDomain: newera.inc
+  rootUserEmail: long.tpt@newera.inc
+  aiProvider: anthropic
+  # Uncomment to route Claude calls through the in-cluster gateway instead of the public API.
+  # anthropicBaseUrl: http://nine-router.demo:20128
+
+migrations:
+  enabled: true
+
+service:
+  type: ClusterIP
+  port: 8000
+
+# TLS terminates at NPM on the public VPS: add a proxy host hrm.tiktuzki.com → node1:80 there.
+ingress:
+  enabled: true
+  className: public
+  hosts:
+    - host: hrm.tiktuzki.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: [ ]
+
+persistence:
+  enabled: true
+  size: 10Gi
+  useLocalVolume: true
+  localPath: /srv/k8s-volumes/x-hrm

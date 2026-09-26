@@ -1,0 +1,25 @@
+{{- if and .Values.persistence.enabled .Values.persistence.useLocalVolume }}
+# Static PV: this cluster has no StorageClass. The directory must exist on node1 first —
+# infra/storage/create-volume-dirs.sh creates it owned by 10001:10001.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: {{ include "x-hrm.fullname" . }}-pv
+  labels:
+    {{- include "x-hrm.labels" . | nindent 4 }}
+spec:
+  capacity:
+    storage: {{ .Values.persistence.size }}
+  volumeMode: Filesystem
+  accessModes:
+    {{- toYaml .Values.persistence.accessModes | nindent 4 }}
+  # Retain: deleting the Argo app must never delete people's CVs.
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: {{ .Values.persistence.storageClass | quote }}
+  local:
+    path: {{ .Values.persistence.localPath }}
+  {{- with .Values.persistence.nodeAffinity }}
+  nodeAffinity:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}

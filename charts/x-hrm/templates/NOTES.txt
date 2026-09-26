@@ -1,0 +1,11 @@
+x-hrm {{ .Chart.AppVersion }} → {{ include "x-hrm.fullname" . }} in {{ .Release.Namespace }}
+{{- if .Values.ingress.enabled }}
+{{- range .Values.ingress.hosts }}
+  https://{{ .host }}
+{{- end }}
+{{- else }}
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "x-hrm.fullname" . }} 8000:{{ .Values.service.port }}
+{{- end }}
+
+Needs Secret {{ include "x-hrm.secretName" . }} (keys: {{ .Values.secret.databaseUrlKey }}, {{ .Values.secret.secretKeyKey }}) — see charts/x-hrm/README.md.
+Migrations: {{ if .Values.migrations.enabled }}initContainer `migrate` (kubectl -n {{ .Release.Namespace }} logs deploy/{{ include "x-hrm.fullname" . }} -c migrate){{ else }}disabled — run `alembic upgrade head` yourself{{ end }}.

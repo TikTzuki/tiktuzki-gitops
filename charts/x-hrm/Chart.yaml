@@ -1,0 +1,19 @@
+apiVersion: v2
+name: x-hrm
+description: New Era HRM — recruiting (CV hub + TA weekly report + dashboard) in one image
+
+# One image, one process: uvicorn serves the FastAPI API AND the statically exported Next.js
+# UI from the same origin (see the Dockerfile in the x-hrm repo). State lives in Postgres
+# plus an uploads volume for CV / JD files.
+#
+# ⚠️ NOT horizontally scalable as built: AI and import jobs run on an in-process thread pool,
+# and on startup the app marks every job still "running" as failed (they cannot be resumed).
+# A second replica — or an old and a new pod overlapping in a rolling update — would kill the
+# other's jobs. Hence replicas: 1 and strategy: Recreate. See README.md.
+type: application
+
+# Bump on every chart change.
+version: 0.1.0
+
+# Application version shipped (matches image.tag once tags are pinned).
+appVersion: "0.1.0"

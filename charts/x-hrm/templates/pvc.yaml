@@ -1,0 +1,20 @@
+{{- if .Values.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "x-hrm.fullname" . }}-data
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "x-hrm.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    {{- toYaml .Values.persistence.accessModes | nindent 4 }}
+  storageClassName: {{ .Values.persistence.storageClass | quote }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.size }}
+  {{- if .Values.persistence.useLocalVolume }}
+  # Bind to OUR static PV, not whichever free PV happens to match the size.
+  volumeName: {{ include "x-hrm.fullname" . }}-pv
+  {{- end }}
+{{- end }}

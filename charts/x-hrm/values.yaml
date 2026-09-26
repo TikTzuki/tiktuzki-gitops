@@ -1,0 +1,152 @@
+# Default values for x-hrm.
+#
+# Defaults are the SAFE ones: no ingress, nothing that points at a real database. Everything
+# environment-specific goes in values-<env>.yaml.
+
+image:
+  repository: tiktuzki/x-hrm
+  # Pin a real tag (a git sha). `latest` makes a rollback impossible to describe.
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: [ ]
+nameOverride: ""
+fullnameOverride: ""
+
+# ─── Database ────────────────────────────────────────────────────────────────────────────
+#
+# The app reads ONE full SQLAlchemy URL (DATABASE_URL), so the whole URL — password included —
+# lives in the Secret, not just the password. The password must be URL-encoded inside it;
+# see README.md for the one-liner that does that.
+#
+# Point it at a plain Postgres endpoint, NOT a transaction-mode pooler (pgdog): Alembic's DDL
+# and psycopg's server-side prepared statements both assume a session that stays pinned.
+database:
+  # Only used for documentation in NOTES.txt — the real target is inside the Secret's URL.
+  host: ""
+  name: hrm
+
+# ─── Secret ──────────────────────────────────────────────────────────────────────────────
+#
+# Name of the Secret carrying credentials, and which keys hold what. Create it as a
+# SealedSecret (templates/sealedsecret.yaml) — see README.md.
+secret:
+  name: ""                       # default: <fullname>-secret
+  databaseUrlKey: database-url   # required — postgresql+psycopg://user:pass@host:port/db
+  migrateDbUrlKey: migrate-db-url  # optional — separate URL for Alembic (e.g. an owner role)
+  secretKeyKey: secret-key       # required when env=production — signs session JWTs
+  anthropicApiKeyKey: anthropic-api-key  # optional — only for AI_PROVIDER=anthropic
+
+# ─── Application settings (non-secret) ───────────────────────────────────────────────────
+app:
+  # "production" makes SECRET_KEY mandatory: without a fixed key every restart would sign
+  # tokens with a fresh random key and log everyone out.
+  env: production
+  # Google Workspace SSO is the only login. The client id is public (it ships in the browser);
+  # the deployed origin must be listed under the OAuth client's "Authorized JavaScript origins".
+  googleClientId: ""
+  allowedEmailDomain: newera.inc
+  # Always HR_ADMIN, can never be demoted or deactivated.
+  rootUserEmail: ""
+  tokenTtlHours: 12
+  # UI and API share one origin, so this only matters for a separately hosted dev UI.
+  corsOrigins: ""
+  maxUploadMb: 15
+  # "anthropic" | "http" | "telegram" — see CONFIGURATION.md in the x-hrm repo.
+  aiProvider: anthropic
+  anthropicModel: ""
+  # Empty = api.anthropic.com. Point at a gateway (e.g. the in-cluster 9router) here.
+  anthropicBaseUrl: ""
+
+# Run `alembic upgrade head` as an initContainer before the app starts. Safe because there is
+# exactly one pod and strategy is Recreate — two migrators never run at once.
+migrations:
+  enabled: true
+
+# Additional environment variables, verbatim (e.g. AI_HTTP_* for AI_PROVIDER=http).
+extraEnv: [ ]
+
+service:
+  type: ClusterIP
+  port: 8000
+
+ingress:
+  enabled: false
+  className: public
+  annotations: { }
+  hosts:
+    - host: chart-example.local
+      paths:
+        - path: /
+          pathType: Prefix
+  # TLS terminates upstream at NPM in this cluster, so this stays empty.
+  tls: [ ]
+
+# CV and JD files uploaded by users. NOT in the image and NOT in Postgres — lose this volume
+# and every stored CV file is gone (the database rows remain, pointing at nothing).
+persistence:
+  enabled: true
+  size: 10Gi
+  accessModes:
+    - ReadWriteOnce
+  storageClass: ""
+  # This cluster has no StorageClass: a static local PV pinned to node1.
+  useLocalVolume: true
+  localPath: /srv/k8s-volumes/x-hrm
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - node1
+
+# The image runs as 10001:10001 and owns /data. fsGroup makes the mounted volume writable.
+podSecurityContext:
+  runAsUser: 10001
+  runAsGroup: 10001
+  runAsNonRoot: true
+  fsGroup: 10001
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: [ "ALL" ]
+
+# PDF/DOCX parsing of a 15 MB CV is the memory peak. No CPU limit — house rule, see
+# infra/limits/limitranges.yaml (CFS throttling).
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    memory: 768Mi
+
+# /health runs `select 1`, so it is READINESS only: a database blip should take the pod out
+# of the Service, not restart it. Liveness only asks "is uvicorn listening".
+startupProbe:
+  tcpSocket:
+    port: http
+  periodSeconds: 5
+  failureThreshold: 30
+livenessProbe:
+  tcpSocket:
+    port: http
+  periodSeconds: 20
+  failureThreshold: 3
+readinessProbe:
+  httpGet:
+    path: /health
+    port: http
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+# Lets in-flight requests (a CV upload, a sheet sync) finish on shutdown.
+terminationGracePeriodSeconds: 30
+
+podAnnotations: { }
+podLabels: { }
+nodeSelector: { }
+tolerations: [ ]
+affinity: { }

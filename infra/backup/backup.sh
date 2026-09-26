@@ -57,6 +57,7 @@ DATA_DIRS=(
   /srv/k8s-volumes/tigerbeetle        # ledger — CRITICAL
   /srv/k8s-volumes/kafka              # broker log segments
   /srv/k8s-volumes/timescaledb-ha     # Patroni PGDATA, one subdir per replica (0,1,2) — see NOTE
+  /srv/k8s-volumes/x-hrm              # uploaded CV / JD files — not re-derivable from the DB
 
   # Provisioned but deliberately not archived:
   # /srv/k8s-volumes/monitoring        # Prometheus TSDB is re-derivable and large; Grafana's

@@ -192,7 +192,8 @@ silently stops following failovers.
 | `16443` | Kubernetes API |
 
 Other web UIs on the same ingress: `argocd.tiktuzki.com`, `cv-hub.tiktuzki.com`,
-`my-pwd.tiktuzki.com`.
+`my-pwd.tiktuzki.com`, `hrm.tiktuzki.com` (x-hrm — secret `demo/x-hrm-secret`: `database-url`,
+`secret-key`, `anthropic-api-key`).
 
 ## argocd
 

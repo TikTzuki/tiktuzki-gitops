@@ -64,6 +64,8 @@ DIRS=(
   # uid 1000, so it repairs ownership itself and this entry could be left root-owned.
   # Setting it anyway means the first boot does no recursive chown over a restored volume.
   "9router|1000:1000|9router data: provider creds + jwt-secret; self-chowns on start"
+  # x-hrm image runs as 10001:10001 and writes CV/JD uploads under /data/uploads.
+  "x-hrm|10001:10001|x-hrm uploads (CV and JD files)"
 )
 
 for entry in "${DIRS[@]}"; do
