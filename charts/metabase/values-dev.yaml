@@ -36,7 +36,7 @@ service:
 # opens the URL first becomes its admin. Do the setup over port-forward (README.md, step 4),
 # then flip this to true. TLS terminates at NPM: proxy host bi.tiktuzki.com → node1:80.
 ingress:
-  enabled: false
+  enabled: true
   className: public
   hosts:
     - host: bi.tiktuzki.com
