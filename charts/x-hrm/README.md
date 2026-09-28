@@ -15,7 +15,7 @@ Source and image build: the `x-hrm` repo (`Dockerfile` at its root).
 | Migrations as an **initContainer** (`alembic upgrade head`) | With one pod and Recreate, exactly one migrator ever runs. A failed migration leaves the pod in `Init` rather than serving new code on an old schema.                                                                                                      |
 | DB via **postgresql-ha HAProxy :5000**, not pgdog           | Alembic runs DDL and takes session locks, and psycopg uses server-side prepared statements. A transaction-mode pooler breaks both. :5000 follows the Patroni leader. This is the same deviation as `neo-flagd`.                                            |
 | Own database **`hrm`**, owned by `app`                      | Table names like `users` and `candidates` would collide in the shared `app` database.                                                                                                                                                                      |
-| Readiness = `/health` (runs `select 1`), liveness = TCP     | A database blip takes the pod out of the Service. It shouldn't restart it.                                                                                                                                                                                 |
+| Readiness = `/readyz`, liveness = `/livez`                  | `/readyz`: database, schema at head, uploads writable. `/livez`: uvicorn answers. A database blip takes the pod out of the Service. It shouldn't restart it.                                                                                               |
 | Static local PV at `/srv/k8s-volumes/x-hrm`, `Retain`       | The cluster has no StorageClass. Deleting the Argo app must never delete CVs.                                                                                                                                                                              |
 
 ## First deploy
@@ -83,7 +83,7 @@ app-of-apps picks the Application up.
 ```bash
 kubectl -n demo logs deploy/x-hrm -c migrate      # alembic output, ends at head
 kubectl -n demo get pod -l app.kubernetes.io/name=x-hrm
-curl -s https://hrm.tiktuzki.com/health            # {"status":"ok","database":"up"}
+curl -s https://hrm.tiktuzki.com/readyz            # {"status":"ready","checks":{"database":"up","schema":"head","uploads":"writable"}}
 ```
 
 Sign in as `app.rootUserEmail`. That account is always HR_ADMIN.

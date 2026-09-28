@@ -128,21 +128,30 @@ resources:
   limits:
     memory: 768Mi
 
-# /health runs `select 1`, so it is READINESS only: a database blip should take the pod out
-# of the Service, not restart it. Liveness only asks "is uvicorn listening".
+# Two different questions, two endpoints (backend/app/probes.py in the x-hrm repo):
+#   /livez  — "is uvicorn answering?" No database, no disk. Failing it RESTARTS the pod, and a
+#             restart fixes nothing when the database is down — it only kills running AI/import jobs.
+#   /readyz — database answers `select 1` (2s timeout), the schema is at the Alembic head this
+#             image expects, and the uploads volume is writable. Failing it takes the pod out of
+#             the Service until it recovers; 503 + {"checks": {...}} says which part is wrong.
+#             A database AHEAD of the image (rolled back to an older tag) still counts as ready.
+# Needs an image that has these endpoints — older images answer 404 and never become ready.
 startupProbe:
-  tcpSocket:
+  httpGet:
+    path: /livez
     port: http
   periodSeconds: 5
   failureThreshold: 30
 livenessProbe:
-  tcpSocket:
+  httpGet:
+    path: /livez
     port: http
   periodSeconds: 20
+  timeoutSeconds: 3
   failureThreshold: 3
 readinessProbe:
   httpGet:
-    path: /health
+    path: /readyz
     port: http
   periodSeconds: 10
   timeoutSeconds: 5
