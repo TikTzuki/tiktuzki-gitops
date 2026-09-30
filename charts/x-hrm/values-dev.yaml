@@ -5,7 +5,7 @@ image:
   pullPolicy: Always
   # TODO: pin to a build sha once CI publishes the image (like charts/checkin). Built on a Mac,
   # push with --platform linux/amd64 — node1 is amd64.
-  tag: "e4840edb"
+  tag: "4789ff80"
 
 # ─── Database ────────────────────────────────────────────────────────────────────────────
 #
