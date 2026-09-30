@@ -64,8 +64,9 @@ app:
     siteUrl: ""
     dashboards: { }
 
-# Run `alembic upgrade head` as an initContainer before the app starts. Safe because there is
-# exactly one pod and strategy is Recreate — two migrators never run at once.
+# Run `alembic upgrade head` as an initContainer before the app starts. One replica and
+# maxSurge 1 mean two migrators never run at once — but the OLD pod keeps serving on the
+# migrated schema during the rollout, so migrations must be backward compatible.
 migrations:
   enabled: true
 
@@ -157,8 +158,13 @@ readinessProbe:
   timeoutSeconds: 5
   failureThreshold: 3
 
-# Lets in-flight requests (a CV upload, a sheet sync) finish on shutdown.
-terminationGracePeriodSeconds: 30
+# On shutdown, first wait this long so Traefik stops routing to the pod, THEN send SIGTERM.
+# Counts against terminationGracePeriodSeconds. 0 disables it.
+preStopSleepSeconds: 5
+
+# Lets in-flight requests (a CV upload, a sheet sync) finish on shutdown — after the preStop
+# sleep, which comes out of this budget.
+terminationGracePeriodSeconds: 35
 
 podAnnotations: { }
 podLabels: { }

@@ -11,10 +11,19 @@ metadata:
   labels:
     {{- include "x-hrm.labels" . | nindent 4 }}
 spec:
-  # Exactly one, and never two at once — see Chart.yaml. Not a value on purpose.
+  # Exactly one in steady state — see Chart.yaml. Not a value on purpose.
   replicas: 1
+  # Zero-downtime deploys: the new pod starts next to the old one and takes traffic only once
+  # /readyz passes; the old pod is stopped after that. The two overlap for a few seconds —
+  # an accepted cost, see Chart.yaml for what it does to jobs running at that moment.
   strategy:
-    type: Recreate
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  # The new pod must stay ready this long before the old one is stopped — a pod that passes
+  # /readyz once and then crashes does not take the only working pod down with it.
+  minReadySeconds: 5
   selector:
     matchLabels:
       {{- include "x-hrm.selectorLabels" . | nindent 6 }}
@@ -44,8 +53,11 @@ spec:
       {{- if .Values.migrations.enabled }}
       initContainers:
         # Same image, same env. Alembic is idempotent: at head it is a no-op. A failed
-        # migration keeps the pod in Init and the OLD pod is already gone (Recreate) — the
-        # schema is never half-served by new code.
+        # migration keeps the NEW pod in Init while the old pod keeps serving — the rollout
+        # just stalls. maxSurge 1 on one replica means one migrator at a time.
+        # ⚠️ The old pod keeps serving on the migrated schema until the new one is ready, so
+        # migrations must be backward compatible (expand, deploy, then contract in a later
+        # release) — never drop or rename a column the running image still reads.
         - name: migrate
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
@@ -77,6 +89,14 @@ spec:
               protocol: TCP
           env:
             {{- include "x-hrm.env" . | nindent 12 }}
+          {{- with .Values.preStopSleepSeconds }}
+          # Endpoint removal and SIGTERM happen at the same time; without this pause Traefik
+          # can still route a request to a pod that has stopped listening (a 502 per deploy).
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: {{ . }}
+          {{- end }}
           {{- with .Values.startupProbe }}
           startupProbe:
             {{- toYaml . | nindent 12 }}
